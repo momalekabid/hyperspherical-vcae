@@ -9,7 +9,6 @@ from hyperspherical_vae.distributions.hyperspherical_uniform import (
 
 
 class VonMisesFisher(torch.distributions.Distribution):
-
     arg_constraints = {
         "loc": torch.distributions.constraints.real,
         "scale": torch.distributions.constraints.positive,
@@ -37,7 +36,7 @@ class VonMisesFisher(torch.distributions.Distribution):
         self.dtype = loc.dtype
         self.loc = loc
         self.scale = scale
-        self.device = loc.device
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu")
         self.__m = loc.shape[-1]
         self.__e1 = (torch.Tensor([1.0] + [0] * (loc.shape[-1] - 1))).to(self.device)
         self.k = k
