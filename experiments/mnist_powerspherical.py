@@ -119,7 +119,7 @@ def get_latent_representations(model, data_loader, n_samples=100):
 
             total_samples += samples_needed
 
-    return (torch.cat(latent_vectors, dim=0).numpy(), torch.cat(labels, dim=0).numpy())
+    return (torch.cat(latent_vectors, dim=0).cpu().detach().numpy(), torch.cat(labels, dim=0).cpu().detach().numpy())
 
 
 def perform_knn_evaluation(model, train_loader, test_loader):

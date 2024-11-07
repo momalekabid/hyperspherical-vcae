@@ -3,7 +3,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 from hyperspherical_vae.distributions import VonMisesFisher
 from hyperspherical_vae.distributions import HypersphericalUniform
-
+# we keep the vmf and powerspherical imports into different files for simplicity, as they share hypersphericalUniform
+# mainly to avoid complications when running code in notebooks
 class ModelVAE(nn.Module):
     def __init__(self, h_dim, z_dim, activation=F.relu, distribution="normal", device="cpu"):
         super(ModelVAE, self).__init__()
@@ -48,7 +49,7 @@ class ModelVAE(nn.Module):
             )
         elif self.distribution == "vmf":
             q_z = VonMisesFisher(z_mean, z_var_or_scale)
-            p_z = HypersphericalUniform(self.z_dim - 1)
+            p_z = HypersphericalUniform(self.z_dim - 1, validate_args=False)
         return q_z, p_z
 
     def forward(self, x):
