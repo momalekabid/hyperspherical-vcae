@@ -128,8 +128,8 @@ def get_latent_representations(model, data_loader, n_samples=100):
             total_samples += samples_needed
 
     return (
-        torch.cat(latent_vectors, dim=0).cpu().numpy(),
-        torch.cat(labels, dim=0).cpu.numpy(),
+        torch.cat(latent_vectors, dim=0).cpu().detach().numpy(),
+        torch.cat(labels, dim=0).cpu().detach().numpy(),
     )
 
 
