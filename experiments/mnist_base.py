@@ -13,14 +13,20 @@ from models.vae_vmf import ModelVAE, compute_loss
 H_DIM = 128
 Z_DIM = 10
 BATCH_SIZE = 64
-EPOCHS = 50
+EPOCHS = 100
 KNN_EVAL_SAMPLES = [100, 600, 1000]
 N_RUNS = 20
 Z_DIMS = [2, 5, 10, 20, 40]
-PATIENCE = 5  # number of epochs to wait for improvement before stopping
-DELTA = 0.01  # minimum change to qualify as an improvement
+PATIENCE = 10  # number of epochs to wait for improvement before stopping
+DELTA = 0.001  # minimum change to qualify as an improvement
 # device configuration
-device = torch.device("cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu")
+device = torch.device(
+    "cuda"
+    if torch.cuda.is_available()
+    else "mps"
+    if torch.backends.mps.is_available()
+    else "cpu"
+)
 print(f"Using device: {device}")
 
 # data loading
@@ -36,7 +42,9 @@ dataset = datasets.MNIST("../datasets", train=True, download=True, transform=tra
 train_size = int(0.8 * len(dataset))
 val_size = len(dataset) - train_size
 train_dataset, val_dataset = random_split(dataset, [train_size, val_size])
-test_dataset = datasets.MNIST("../datasets", train=False, download=True, transform=transform)
+test_dataset = datasets.MNIST(
+    "../datasets", train=False, download=True, transform=transform
+)
 
 train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True)
 val_loader = DataLoader(val_dataset, batch_size=BATCH_SIZE)
@@ -47,7 +55,7 @@ def train_and_evaluate(
     model, train_loader, val_loader, test_loader, optimizer, device, epochs=EPOCHS
 ):
     def lr_lambda(epoch):
-        warmup_epochs = 10  # shorter warm-up period
+        warmup_epochs = 50
         if epoch < warmup_epochs:
             return epoch / warmup_epochs  # linear warm-up
         return 1.0  # maintain full learning rate after warm-up
@@ -119,7 +127,10 @@ def get_latent_representations(model, data_loader, n_samples=100):
 
             total_samples += samples_needed
 
-    return (torch.cat(latent_vectors, dim=0).cpu().numpy(), torch.cat(labels, dim=0).cpu.numpy())
+    return (
+        torch.cat(latent_vectors, dim=0).cpu().numpy(),
+        torch.cat(labels, dim=0).cpu.numpy(),
+    )
 
 
 def perform_knn_evaluation(model, train_loader, test_loader):
@@ -128,11 +139,7 @@ def perform_knn_evaluation(model, train_loader, test_loader):
 
     results = {}
     for n_samples in KNN_EVAL_SAMPLES:
-        metric = (
-            "cosine"
-            if model.distribution == "vmf" 
-            else "euclidean"
-        )
+        metric = "cosine" if model.distribution == "vmf" else "euclidean"
         knn = KNeighborsClassifier(n_neighbors=5, metric=metric)
         knn.fit(X_train[:n_samples], y_train[:n_samples])
         y_pred = knn.predict(X_test)
@@ -217,17 +224,18 @@ df = pd.DataFrame(results_table)
 df = df.pivot(index="d", columns="n_samples", values=["N-VAE", "VMF-VAE"])
 df.columns.names = ["Method", "n_samples"]
 df = df.reindex(
-    columns=pd.MultiIndex.from_product(
-        [["N-VAE", "VMF-VAE"], KNN_EVAL_SAMPLES]
-    )
+    columns=pd.MultiIndex.from_product([["N-VAE", "VMF-VAE"], KNN_EVAL_SAMPLES])
 )
 
 print(df.to_string())
 # save as csv
-df.to_csv("pws_vae_results.csv")
+df.to_csv("vmf_vae_results.csv")
+
+
 def highlight_best(s):
     is_best = s == s.max()
     return ["font-weight: bold" if v else "" for v in is_best]
+
 
 styled_df = df.style.apply(highlight_best, axis=1)
 print(styled_df.to_string())

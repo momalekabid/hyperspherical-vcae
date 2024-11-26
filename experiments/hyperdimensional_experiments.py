@@ -46,7 +46,7 @@ def get_dataset(dataset_name, batch_size):
     
     return train_loader, test_loader, in_channels
 
-def save_reconstructions(model, test_loader, epoch, save_path):
+def save_reconstructions(model, test_loader, epoch, save_path, dataset='fashionmnist'):
     model.eval()
     with torch.no_grad():
         data = next(iter(test_loader))
@@ -58,15 +58,16 @@ def save_reconstructions(model, test_loader, epoch, save_path):
         for i in range(8):
             # img = x[i].cpu().squeeze().numpy()
             # if img.shape[0] == 1:
-            axes[0, i].imshow(x[i].cpu().squeeze(), cmap='gray')
-            axes[0, i].axis('off')
-            axes[1, i].imshow(recon_x[i].cpu().squeeze(), cmap='gray')
-            axes[1, i].axis('off')
-            # else:
-            #     axes[0, i].imshow(x[i].cpu().permute(1, 2, 0)) # (C, H, W) -> (H, W, C)
+            # if dataset == 'fashionmnist':
+            #     axes[0, i].imshow(x[i].cpu().squeeze(), cmap='gray')
             #     axes[0, i].axis('off')
-            #     axes[1, i].imshow(recon_x[i].cpu().permute(1, 2, 0))
+            #     axes[1, i].imshow(recon_x[i].cpu().squeeze(), cmap='gray')
             #     axes[1, i].axis('off')
+            # else:
+            axes[0, i].imshow(x[i].cpu().permute(1, 2, 0)) # (C, H, W) -> (H, W, C)
+            axes[0, i].axis('off')
+            axes[1, i].imshow(recon_x[i].cpu().permute(1, 2, 0))
+            axes[1, i].axis('off')
         
         plt.tight_layout()
         plt.savefig(f"{save_path}/reconstructions_epoch_{epoch}.png")
@@ -117,7 +118,7 @@ def visualize_latent_space(model, test_loader, save_path):
     plt.savefig(f"{save_path}/latent_space_tsne.png")
     plt.close()
 
-def train_model(model, train_loader, test_loader, optimizer, epochs, beta, gamma, save_dir):
+def train_model(model, train_loader, test_loader, optimizer, epochs, beta, gamma, save_dir, dn='fashionmnist'):
     # device = torch.device("cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu")
     device = _DEVICE
     model = model.to(device)
@@ -163,9 +164,9 @@ def train_model(model, train_loader, test_loader, optimizer, epochs, beta, gamma
         metrics['kl_loss'].append(kl_loss.item())
         metrics['unitary_loss'].append(unitary_loss.item())
         
-        # save reconstructions every few epochs
-        if epoch % 5 == 0:
-            save_reconstructions(model, test_loader, epoch, save_dir)
+        # save reconstructions every ten epochs
+        if epoch % 10 == 0:
+            save_reconstructions(model, test_loader, epoch, save_dir, dn)
     
     # save final visualizations and reconstructions
     save_reconstructions(model, test_loader, epoch, save_dir)
@@ -197,7 +198,7 @@ def main():
         
         metrics = train_model(
             model, train_loader, test_loader, optimizer, 
-            args.epochs, args.beta, gamma, exp_dir
+            args.epochs, args.beta, gamma, exp_dir, args.dataset
         )
         
         results.append({

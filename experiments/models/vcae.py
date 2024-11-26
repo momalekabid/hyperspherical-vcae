@@ -64,9 +64,7 @@ class VAE(nn.Module):
         
     def reparameterize(self, mu, logvar):
         if self.distribution == "powerspherical":
-            ## optional:: normalize mu to unit vector
-            # mu /= mu.norm(dim=-1, keepdim=True) # powerspherical expects normalized mu
-            # mu = F.normalize(mu, p=2, dim=-1)
+            ## we already normalize mu to unit vector in encoder
             # else: print(f"diff between unit norm and mu: {mu.norm(dim=-1)}")
             q_z = PowerSpherical(mu, logvar.squeeze(-1)) # logvar: (B,1) -> (B,)
             p_z = HypersphericalUniform(self.latent_dim - 1, validate_args=False)
