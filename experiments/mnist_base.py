@@ -13,7 +13,7 @@ from models.vae_vmf import ModelVAE, compute_loss
 H_DIM = 128
 Z_DIM = 10
 BATCH_SIZE = 64
-EPOCHS = 100
+EPOCHS = 50
 KNN_EVAL_SAMPLES = [100, 600, 1000]
 N_RUNS = 20
 Z_DIMS = [2, 5, 10, 20, 40]
@@ -50,12 +50,53 @@ train_loader = DataLoader(train_dataset, batch_size=BATCH_SIZE, shuffle=True)
 val_loader = DataLoader(val_dataset, batch_size=BATCH_SIZE)
 test_loader = DataLoader(test_dataset, batch_size=BATCH_SIZE)
 
+def get_random_test_samples(data_loader, n_samples):
+    """Get random samples from test data loader without replacement"""
+    all_data = []
+    all_labels = []
+    
+    for data, labels in data_loader:
+        all_data.append(data)
+        all_labels.append(labels)
+    
+    all_data = torch.cat(all_data, dim=0)
+    all_labels = torch.cat(all_labels, dim=0)
+    
+    # random sampling without replacement
+    idx = torch.randperm(len(all_data))[:n_samples]
+    return all_data[idx], all_labels[idx]
+
+def encode_dataset(model, data_loader):
+    """Get latent representations for entire dataset"""
+    model.eval()
+    all_z = []
+    all_labels = []
+    
+    with torch.no_grad():
+        for data, labels in data_loader:
+            data = data.to(device)
+            z_mean, _ = model.encode(data.view(-1, 784))
+            all_z.append(z_mean.cpu())
+            all_labels.append(labels)
+    
+    return torch.cat(all_z, dim=0).cpu().detach().numpy(), torch.cat(all_labels, dim=0).cpu().detach().numpy()
+
+def encode_test_samples(model, test_loader, n_samples):
+    """Get latent representations for random test samples"""
+    model.eval()
+    data, labels = get_random_test_samples(test_loader, n_samples)
+    data = data.to(device)
+    
+    with torch.no_grad():
+        z_mean, _ = model.encode(data.view(-1, 784))
+    
+    return z_mean.cpu().detach().numpy(), labels.cpu().detach().numpy()
 
 def train_and_evaluate(
     model, train_loader, val_loader, test_loader, optimizer, device, epochs=EPOCHS
 ):
     def lr_lambda(epoch):
-        warmup_epochs = 50
+        warmup_epochs = 10
         if epoch < warmup_epochs:
             return epoch / warmup_epochs  # linear warm-up
         return 1.0  # maintain full learning rate after warm-up
@@ -108,43 +149,44 @@ def train_and_evaluate(
     return perform_knn_evaluation(model, train_loader, test_loader)
 
 
-def get_latent_representations(model, data_loader, n_samples=100):
-    model.eval()
-    latent_vectors, labels = [], []
-    total_samples = 0
-    with torch.no_grad():
-        for data, target in data_loader:
-            if total_samples >= n_samples:
-                break
+# def get_latent_representations(model, data_loader, n_samples=100):
+#     model.eval()
+#     latent_vectors, labels = [], []
+#     total_samples = 0
+#     with torch.no_grad():
+#         for data, target in data_loader:
+#             if total_samples >= n_samples:
+#                 break
 
-            data = data.to(device)
-            z_mean, z_scale = model.encode(data.view(-1, 784))
+#             data = data.to(device)
+#             z_mean, z_scale = model.encode(data.view(-1, 784))
 
-            # calculate how many samples we still need
-            samples_needed = min(n_samples - total_samples, len(data))
-            latent_vectors.append(z_mean[:samples_needed])
-            labels.append(target[:samples_needed])
+#             # calculate how many samples we still need
+#             samples_needed = min(n_samples - total_samples, len(data))
+#             latent_vectors.append(z_mean[:samples_needed])
+#             labels.append(target[:samples_needed])
 
-            total_samples += samples_needed
+#             total_samples += samples_needed
 
-    return (
-        torch.cat(latent_vectors, dim=0).cpu().detach().numpy(),
-        torch.cat(labels, dim=0).cpu().detach().numpy(),
-    )
+#     return (
+#         torch.cat(latent_vectors, dim=0).cpu().detach().numpy(),
+#         torch.cat(labels, dim=0).cpu().detach().numpy(),
+#     )
 
 
 def perform_knn_evaluation(model, train_loader, test_loader):
-    X_train, y_train = get_latent_representations(model, train_loader)
-    X_test, y_test = get_latent_representations(model, test_loader)
+    X_train, y_train = encode_dataset(model, train_loader)
 
     results = {}
     for n_samples in KNN_EVAL_SAMPLES:
-        metric = "cosine" if model.distribution == "vmf" else "euclidean"
+        # only sample from test set
+        X_test, y_test = encode_test_samples(model, test_loader, n_samples)
+        
+        metric = "cosine" if model.distribution in ["power_spherical", "vmf"] else "euclidean"
         knn = KNeighborsClassifier(n_neighbors=5, metric=metric)
-        knn.fit(X_train[:n_samples], y_train[:n_samples])
+        knn.fit(X_train, y_train)
         y_pred = knn.predict(X_test)
         results[n_samples] = accuracy_score(y_test, y_pred)
-        # print(f"Accuracy with {n_samples} samples: {results[n_samples]:.2f}")
 
     return results
 

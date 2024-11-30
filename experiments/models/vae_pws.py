@@ -2,8 +2,6 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from power_spherical import PowerSpherical, HypersphericalUniform
-# from hyperspherical_vae.distributions import VonMisesFisher
-# from hyperspherical_vae.distributions import HypersphericalUniform as HSUniform
 
 class ModelVAE(nn.Module):
     def __init__(self, h_dim, z_dim, activation=F.relu, distribution="normal", device="cpu"):
