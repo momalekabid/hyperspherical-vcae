@@ -5,16 +5,33 @@ import matplotlib.pyplot as plt
 import numpy as np
 from power_spherical import PowerSpherical, HypersphericalUniform
 
+
 class Encoder(nn.Module):
     def __init__(self, latent_dim, in_channels=1):
         super(Encoder, self).__init__()
-        self.conv1 = nn.Conv2d(in_channels, 32, 2, stride=2, padding=1)
-        self.conv2 = nn.Conv2d(32, 64, 4, stride=2, padding=1)
-        self.conv3 = nn.Conv2d(64, 128, 4, stride=2, padding=1)
+        self.conv1 = nn.Conv2d(in_channels, 64, 3, stride=2, padding=1)
+        self.conv2 = nn.Conv2d(64, 128, 3, stride=2, padding=1)
+        self.conv3 = nn.Conv2d(128, 256, 3, stride=2, padding=1)
+        # self.conv1 = nn.Conv2d(in_channels, 32, 2, stride=2, padding=1)
+        # self.conv2 = nn.Conv2d(32, 64, 4, stride=2, padding=1)
+        # self.conv3 = nn.Conv2d(64, 128, 4, stride=2, padding=1)
+        # self.conv4 = nn.Conv2d(128, 256, 6, stride=2, padding=3)
         # double it
-        self.conv4 = nn.Conv2d(128, 256, 6, stride=2, padding=3)
-        self.fc_mu = nn.Linear(256 * 3 * 3, latent_dim)
-        self.fc_logvar = nn.Linear(256 * 3 * 3, 1)
+        self.conv4 = nn.Conv2d(256, 512, 3, stride=2, padding=1)
+
+        # self.fc_mu = nn.Sequential(
+        #     nn.Linear(512 * 2 * 2, 1024),
+        #     nn.ReLU(),
+        #     nn.Linear(1024, latent_dim)
+        # )
+        self.fc_logvar = nn.Linear(512 * 2 * 2, 1)
+        self.fc_mu = nn.Linear(512 * 2 * 2, latent_dim)
+#         self.fc_logvar = nn.Sequential(
+#             nn.Linear(512 * 2 * 2, 1024),
+#             nn.ReLU(),
+#             nn.Linear(1024, 1),
+#             nn.Softplus()
+#         )
 
     def forward(self, x):
         x = F.relu(self.conv1(x))
@@ -36,22 +53,30 @@ class Encoder(nn.Module):
 class Decoder(nn.Module):
     def __init__(self, latent_dim, out_channels=1):
         super(Decoder, self).__init__()
-        self.fc = nn.Linear(latent_dim, 256 * 3 * 3)
-        self.conv_trans0 = nn.ConvTranspose2d(256, 128, 6, stride=2, padding=3)
-        self.conv_trans1 = nn.ConvTranspose2d(128, 64, 4, stride=2, padding=1)
-        self.conv_trans2 = nn.ConvTranspose2d(64, 32, 4, stride=2, padding=1)
-        self.conv_trans3 = nn.ConvTranspose2d(32, out_channels, 4, stride=2, padding=1)
+        self.fc = nn.Linear(latent_dim, 512 * 2 * 2)
+        # self.fc = nn.Sequential(
+        #     nn.Linear(latent_dim, 1024),
+        #     nn.ReLU(),
+        #     nn.Linear(1024, 512 * 2 * 2)
+        # )
+        # self.conv_trans0 = nn.ConvTranspose2d(256, 128, 6, stride=2, padding=3)
+        # self.conv_trans1 = nn.ConvTranspose2d(128, 64, 4, stride=2, padding=1)
+        # self.conv_trans2 = nn.ConvTranspose2d(64, 32, 4, stride=2, padding=1)
+        # self.conv_trans3 = nn.ConvTranspose2d(32, out_channels, 4, stride=2, padding=1)
+        self.conv_trans1 = nn.ConvTranspose2d(512, 256, 3, stride=2, padding=1, output_padding=1)
+        self.conv_trans2 = nn.ConvTranspose2d(256, 128, 3, stride=2, padding=1, output_padding=1)
+        self.conv_trans3 = nn.ConvTranspose2d(128, 64, 3, stride=2, padding=1, output_padding=1)
+        self.conv_trans4 = nn.ConvTranspose2d(64, out_channels, 3, stride=2, padding=1, output_padding=1)
 
     def forward(self, z):
         x = self.fc(z)
-        x = x.view(x.size(0), 256, 3, 3)
-        x = F.relu(self.conv_trans0(x))
+        x = x.view(x.size(0), 512, 2, 2)
         x = F.relu(self.conv_trans1(x))
         x = F.relu(self.conv_trans2(x))
-        x = self.conv_trans3(x)
+        x = F.relu(self.conv_trans3(x))
+        x = self.conv_trans4(x)
         x = F.tanh(x)
         return x
-
 
 
 class VAE(nn.Module):
@@ -80,7 +105,7 @@ class VAE(nn.Module):
         z, q_z, p_z = self.reparameterize(mu, logvar)
         recon_x = self.decoder(z)
         return recon_x, mu, logvar, q_z, p_z
-    
+
     def compute_loss(self, x, recon_x, mu, logvar, q_z, p_z, beta, gamma):
         # reconstruction loss
         recon_loss = F.mse_loss(recon_x, x, reduction='sum')
@@ -93,8 +118,9 @@ class VAE(nn.Module):
             
         # unitary constraint
         fft_magnitudes = torch.abs(torch.fft.fftshift(torch.fft.fft(mu)))
-
+        target = torch.ones_like(fft_magnitudes) / torch.sqrt(torch.tensor(mu.size(-1), dtype=torch.float32))
+        unitary_loss = F.mse_loss(fft_magnitudes, target, reduction='sum')
         unitary_loss = F.mse_loss(fft_magnitudes, torch.ones_like(fft_magnitudes), reduction='sum')
-        
-        total_loss = recon_loss + beta * kl_loss + gamma * unitary_loss
+        total_loss = recon_loss + beta * kl_loss + gamma*unitary_loss
         return total_loss, recon_loss, kl_loss, unitary_loss
+
