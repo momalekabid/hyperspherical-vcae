@@ -334,10 +334,10 @@ def main():
             for beta in [1.0, 0.1]:
                 args.distribution = distribution
                 args.beta = beta
-                if distribution == 'gaussian' and beta != 1.0:
-                    continue
-                elif distribution == 'powerspherical' and beta == 1.0:
-                    continue
+                # if distribution == 'gaussian' and beta != 1.0:
+                #     continue
+                # elif distribution == 'powerspherical' and beta == 1.0:
+                #     continue
                 
                 for latent_dim in args.latent_dims:
                     run_accuracies = []
