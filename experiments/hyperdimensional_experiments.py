@@ -21,19 +21,19 @@ def parse_args():
     parser = argparse.ArgumentParser(description='Train VAE model')
     parser.add_argument('--dataset', type=str, default='fashionmnist', 
                       choices=['mnist', 'fashionmnist', 'cifar10'])
-    parser.add_argument('--batch_size', type=int, default=64)
-    parser.add_argument('--epochs', type=int, default=10)
+    parser.add_argument('--batch_size', type=int, default=128)
+    parser.add_argument('--epochs', type=int, default=25)
     parser.add_argument('--distribution', type=str, default='powerspherical', 
                       choices=['gaussian', 'powerspherical'])
-    parser.add_argument('--beta', type=float, default=0.25)
+    parser.add_argument('--beta', type=float, default=0.1)
     parser.add_argument('--gamma', type=float, default=0.0)
     parser.add_argument('--latent_dims', type=int, nargs='+', 
-                      default=[32, 64, 128, 256, 512, 1024, 2048, 4096, 8192])
+                      default=[64, 128, 256, 512, 1024, 2048, 3072, 4096])
     parser.add_argument('--output_dir', type=str, default='results')
     parser.add_argument('--knn_samples', type=int, default=1000, help='Number of test samples to use for KNN evaluation')
     parser.add_argument('--n_neighbors', type=int, default=5, help='Number of neighbors for KNN')
-    parser.add_argument('--knn_runs', type=int, default=5, help='Number of KNN evaluation runs')
-    parser.add_argument('--graph', default=True, action='store_true', 
+    parser.add_argument('--knn_runs', type=int, default=20, help='Number of KNN evaluation runs')
+    parser.add_argument('--graph', action='store_true', 
                       help='Enable comparative plotting')
     return parser.parse_args()
 
@@ -260,7 +260,6 @@ def train_model(model, train_loader, test_loader, optimizer, args, save_dir, dn)
     # save final visualizations and reconstructions
     save_reconstructions(model, test_loader, args.epochs-1, save_dir, dn)
     visualize_latent_space(model, test_loader, save_dir)
-#   def evaluate_knn(model_class, model_args, train_loader, test_loader, n_samples, n_neighbors, n_runs, device, save_dir="results/latest"): 
     model_args = {
         'latent_dim': model.latent_dim,
         'distribution': model.distribution,
@@ -293,7 +292,7 @@ def run_experiment(args, latent_dim=None):
     
     # initialize model and optimizer
     model = VAE(latent_dim=latent_dim, in_channels=in_channels, distribution=args.distribution)
-    optimizer = optim.Adam(model.parameters(), lr=1e-3)
+    optimizer = optim.Adam(model.parameters(), lr=5e-4)
     
     # train model and get metrics
     metrics = train_model(
@@ -323,18 +322,22 @@ def main():
         results_dict = {
             ('gaussian', 1.0): {'latent_dims': [], 'accuracy_means': [], 
                               'accuracy_stds': [], 'f1_means': [], 'f1_stds': []},
-            ('gaussian', 0.25): {'latent_dims': [], 'accuracy_means': [], 
+            ('gaussian', 0.1): {'latent_dims': [], 'accuracy_means': [], 
                               'accuracy_stds': [], 'f1_means': [], 'f1_stds': []},
             ('powerspherical', 1.0): {'latent_dims': [], 'accuracy_means': [], 
                                     'accuracy_stds': [], 'f1_means': [], 'f1_stds': []},
-            ('powerspherical', 0.25): {'latent_dims': [], 'accuracy_means': [], 
+            ('powerspherical', 0.1): {'latent_dims': [], 'accuracy_means': [], 
                                     'accuracy_stds': [], 'f1_means': [], 'f1_stds': []}
         }
         
-        for distribution in ['powerspherical','gaussian']:
-            for beta in [1.0, 0.25]:
+        for distribution in ['powerspherical','gaussian']: # TBD 
+            for beta in [1.0, 0.1]:
                 args.distribution = distribution
                 args.beta = beta
+                if distribution == 'gaussian' and beta != 1.0:
+                    continue
+                elif distribution == 'powerspherical' and beta == 1.0:
+                    continue
                 
                 for latent_dim in args.latent_dims:
                     run_accuracies = []
@@ -346,7 +349,7 @@ def main():
                         run_accuracies.append(metrics['knn_metrics']['accuracy_mean'])
                         run_f1_scores.append(metrics['knn_metrics']['f1_mean'])
                     
-                    # Calculate statistics across runs
+                    # calc statistics across runs
                     results_dict[(distribution, beta)]['latent_dims'].append(latent_dim)
                     results_dict[(distribution, beta)]['accuracy_means'].append(np.mean(run_accuracies))
                     results_dict[(distribution, beta)]['accuracy_stds'].append(np.std(run_accuracies))
@@ -366,10 +369,10 @@ def plot_comparative_results(results_dict, save_path):
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(15, 6))
     
     styles = {
-        ('gaussian', 1.0): ('orange', '-', 'Gaussian (β=1)'),
-        ('gaussian', 0.25): ('orange', '--', 'Gaussian (β=0.25)'),
-        ('powerspherical', 1.0): ('blue', '-', 'Power Spherical (β=1)'),
-        ('powerspherical', 0.25): ('blue', '--', 'Power Spherical (β=0.25)')
+        ('gaussian', 1.0): ('orange', '--', 'Gaussian (β=1)'),
+        ('gaussian', 0.1): ('orange', '-', 'Gaussian (β=0.1)'),
+        ('powerspherical', 1.0): ('blue', '--', 'Power Spherical (β=1)'),
+        ('powerspherical', 0.1): ('blue', '-', 'Power Spherical (β=0.1)')
     }
     
     for (dist, beta), metrics in results_dict.items():

@@ -6,6 +6,7 @@ import math
 import numpy as np
 from scipy.special import i0, i1
 from mpl_toolkits.mplot3d import Axes3D
+import torch.nn.functional as F
 import matplotlib.pyplot as plt
 from torch.distributions.kl import register_kl, kl_divergence
 
@@ -37,12 +38,17 @@ class CliffordTorusDistribution(Distribution):
         """
         kappa_np = kappa.detach().cpu().numpy()
         
-        # compute I₀(κ) and I₁(κ)
-        i0_k = i0(kappa_np)
-        i1_k = i1(kappa_np)
+        # handle array-like input for Bessel functions
+        if np.isscalar(kappa_np):
+            i0_k = float(i0(kappa_np))
+            i1_k = float(i1(kappa_np))
+        else:
+            i0_k = np.array([float(i0(k)) for k in kappa_np.flat]).reshape(kappa_np.shape)
+            i1_k = np.array([float(i1(k)) for k in kappa_np.flat]).reshape(kappa_np.shape)
         
-        i0_k = torch.from_numpy(i0_k).to(kappa.device)
-        i1_k = torch.from_numpy(i1_k).to(kappa.device)
+        # convert back to torch tensors with proper device placement
+        i0_k = torch.tensor(i0_k, device=kappa.device, dtype=kappa.dtype)
+        i1_k = torch.tensor(i1_k, device=kappa.device, dtype=kappa.dtype)
         
         # compute E[cos(x - μ)] = I₁(κ)/I₀(κ)
         expected_cos = i1_k / i0_k
@@ -96,16 +102,16 @@ class CliffordTorusDistribution(Distribution):
         except Exception as e:
             print(f"error at verification of conj symmetry: {e}")
             print(theta_s)
-        # assert [theta_s[i, n//2] == 0 for i in range(theta_s.shape[0])]
         
         # convert to complex exponentials
         samples_complex = torch.exp(1j * theta_s)
 
-        # orthonormal scales by 1/sqrt(N) instead of 1/n, which means it's a unitary transform too?
+        # orthonormal scales by 1/sqrt(N) instead of 1/n
         result = torch.fft.ifft(samples_complex, dim=-1, norm="ortho") 
+        # result = torch.fft.ifft(samples_complex, dim=-1)
         # print(f"result shape: {result.shape}")
 
-        return result.real
+        return result
 
     def log_prob(self, value):
         if self._validate_args:
@@ -169,82 +175,36 @@ class CliffordTorusUniform(torch.distributions.Distribution):
         self.dtype = dtype
         
     def rsample(self, sample_shape=torch.Size()):
-        # Sample uniform angles
+        # sample uniform angles
         shape = sample_shape + torch.Size([self.dim])
         angles = torch.rand(shape, device=self.device) * 2 * math.pi
         
-        # Convert to complex exponentials
+        # convert to complex exponentials
         samples_complex = torch.zeros(
             sample_shape + torch.Size([2 * self.dim]), 
             dtype=torch.complex64,
             device=self.device
         )
         samples_complex[..., :self.dim] = torch.exp(1j * angles)
-        # Fill conjugate symmetric values
+        # fill conjugate symmetric values
         samples_complex[..., self.dim:] = torch.conj(
             torch.flip(samples_complex[..., :self.dim], dims=(-1,))
         )
         
-        # Take inverse FFT
+        # take inverse FFT
         result = torch.fft.ifft(samples_complex, dim=-1, norm="ortho")
         return result
 
     def log_prob(self, value):
-        # Uniform probability on the torus
+        # uniform probability on the torus
         return -torch.ones_like(value[..., 0]) * self.log_normalizer()
     
     def log_normalizer(self):
-        # Log of surface area of torus = log((2π)^dim)
+        # log of surface area of torus = log((2π)^dim)
         return self.dim * math.log(2 * math.pi)
 
     def entropy(self):
         return self.log_normalizer()
-
-
-# def test_clifford_torus_properties():
-#     """Test suite to verify properties of the Clifford torus distribution"""
-    
-#     # Test 1: Verify distribution integrates to 1 and sampling works
-#     dim = 10  # This gives us a 4D embedding
-#     loc = torch.zeros(dim)
-#     concentration = torch.ones(dim) * 5.0
-#     dist = CliffordTorusDistribution(loc, concentration)
-    
-#     # Generate samples and visualize
-#     n_samples = 1000
-#     samples = dist.rsample((n_samples,))
-    
-#     # Plot circle embeddings
-#     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 5))
-#     ax1.scatter(samples[:, 0].real, samples[:, 1].real, alpha=0.5)
-#     ax1.set_title('First Circle Embedding')
-#     ax1.set_aspect('equal')
-#     ax2.scatter(samples[:, 2].real, samples[:, 3].real, alpha=0.5)
-#     ax2.set_title('Second Circle Embedding')
-#     ax2.set_aspect('equal')
-#     plt.show()
-    
-#     # Test 2: Check entropy estimation via MC
-#     entropy_mc = -dist.log_prob(samples).mean()
-#     entropy_analytical = dist.entropy()
-#     print("MC Entropy:", entropy_mc.item())
-#     print("Analytical Entropy:", entropy_analytical.item())
-#     print("Close?", torch.isclose(entropy_mc, entropy_analytical, atol=1e-2))
-    
-#     # Test 3: Check KL divergence with uniform
-#     prior = CliffordTorusUniform(dim)
-#     kl_mc = (dist.log_prob(samples) - prior.log_prob(samples)).mean()
-#     kl_analytical = torch.distributions.kl.kl_divergence(dist, prior)
-#     print("\nKL divergence (MC):", kl_mc.item())
-#     print("KL divergence (Analytical):", kl_analytical.item())
-#     print("Close?", torch.isclose(kl_mc, kl_analytical, atol=1e-2))
-    
-#     # Test 4: Check gradients
-#     sample = dist.rsample()
-#     grad_loc = torch.autograd.grad(sample.sum(), dist.loc, retain_graph=True)[0]
-#     grad_concentration = torch.autograd.grad(sample.sum(), dist.concentration)[0]
-#     print("\nGradient w.r.t loc:", grad_loc)
-#     print("Gradient w.r.t concentration:", grad_concentration)
 
 
 def test_clifford_torus_properties():
@@ -278,12 +238,12 @@ def test_clifford_torus_properties():
         """
         fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 5))
         
-        # Compute angles for first circle
+        # angles for first circle
         angles1 = torch.atan2(samples[:, 1].real, samples[:, 0].real)
         ax1.hist(angles1.numpy(), bins=50, density=True)
         ax1.set_title('Angle Distribution (First Circle)')
         
-        # Compute angles for second circle
+        # angles for second circle
         angles2 = torch.atan2(samples[:, 3].real, samples[:, 2].real)
         ax2.hist(angles2.numpy(), bins=50, density=True)
         ax2.set_title('Angle Distribution (Second Circle)')
@@ -337,7 +297,7 @@ if __name__ == "__main__":
     imaginary = torch.sum(imaginary)
     imaginary = imaginary.item()
     # sum all imag comp 
-    # print("Sample shape:", samples.shape)
+    print("Sample shape:", samples.shape)
     print("Sum of imaginary components:", imaginary)
     print("Is real:", torch.allclose(samples.imag, torch.zeros_like(samples.imag), rtol=1e-6, atol=1e-6))
     
@@ -348,9 +308,19 @@ if __name__ == "__main__":
     print("Entropy shape:", entropy.shape)
     test_clifford_torus_properties()
     prior = CliffordTorusUniform(d, device=device)
-    posterior = distribution  # Your encoder output
+    posterior = distribution
     
     kl_div = torch.distributions.kl.kl_divergence(posterior, prior)
     print("KL divergence shape:", kl_div.shape)
     print("Mean KL divergence:", kl_div.mean().item())
+    batch_size = 32
+    latent_dim = 4
 
+    # t = F.normalize(torch.randn(batch_size, latent_dim), dim=-1)
+    # concentration = F.softplus(torch.randn(batch_size, latent_dim))
+    # dist = CliffordTorusDistribution(t, concentration)
+    # samples = dist.rsample()
+    # print(samples)
+    # # Verify properties
+    # assert torch.allclose(samples.abs(), torch.ones_like(samples), atol=1e-5)
+    # assert torch.allclose(samples.imag, torch.zeros_like(samples.imag), atol=1e-5)

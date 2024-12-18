@@ -13,12 +13,12 @@ from models.vae_vmf import ModelVAE, compute_loss
 H_DIM = 128
 Z_DIM = 10
 BATCH_SIZE = 64
-EPOCHS = 50
+EPOCHS = 100
 KNN_EVAL_SAMPLES = [100, 600, 1000]
 N_RUNS = 20
 Z_DIMS = [2, 5, 10, 20, 40]
 PATIENCE = 10  # number of epochs to wait for improvement before stopping
-DELTA = 0.001  # minimum change to qualify as an improvement
+DELTA = 0.05  # minimum change to qualify as an improvement
 # device configuration
 device = torch.device(
     "cuda"
@@ -96,7 +96,7 @@ def train_and_evaluate(
     model, train_loader, val_loader, test_loader, optimizer, device, epochs=EPOCHS
 ):
     def lr_lambda(epoch):
-        warmup_epochs = 10
+        warmup_epochs = 50
         if epoch < warmup_epochs:
             return epoch / warmup_epochs  # linear warm-up
         return 1.0  # maintain full learning rate after warm-up

@@ -24,14 +24,14 @@ class Encoder(nn.Module):
         #     nn.ReLU(),
         #     nn.Linear(1024, latent_dim)
         # )
-        self.fc_logvar = nn.Linear(512 * 2 * 2, 1)
+        # self.fc_logvar = nn.Linear(512 * 2 * 2, 1)
         self.fc_mu = nn.Linear(512 * 2 * 2, latent_dim)
-#         self.fc_logvar = nn.Sequential(
-#             nn.Linear(512 * 2 * 2, 1024),
-#             nn.ReLU(),
-#             nn.Linear(1024, 1),
-#             nn.Softplus()
-#         )
+        self.fc_logvar = nn.Sequential(
+            nn.Linear(512 * 2 * 2, 1024),
+            nn.ReLU(),
+            nn.Linear(1024, 1),
+            nn.Softplus()
+        )
 
     def forward(self, x):
         x = F.relu(self.conv1(x))
@@ -43,6 +43,7 @@ class Encoder(nn.Module):
         mu = self.fc_mu(x)
         logvar = self.fc_logvar(x)
         logvar = F.softplus(logvar) + 1
+        # print(logvar)
         # the `+ 1` can prevent collapsing behaviors
         # normalize mu 
         mu = F.normalize(mu, p=2, dim=-1)
