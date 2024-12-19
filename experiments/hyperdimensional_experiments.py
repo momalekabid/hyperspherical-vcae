@@ -7,6 +7,7 @@ import torch.functional as F
 import numpy as np
 from sklearn.manifold import TSNE
 from sklearn.neighbors import KNeighborsClassifier
+import re
 from sklearn.metrics import f1_score, accuracy_score
 import matplotlib.pyplot as plt
 from pathlib import Path
@@ -27,14 +28,16 @@ def parse_args():
                       choices=['gaussian', 'powerspherical'])
     parser.add_argument('--beta', type=float, default=0.1)
     parser.add_argument('--gamma', type=float, default=0.0)
-    parser.add_argument('--latent_dims', type=int, nargs='+', 
+    parser.add_argument('--latent_dims', type=int, nargs='+',
                       default=[64, 128, 256, 512, 1024, 2048, 3072, 4096])
     parser.add_argument('--output_dir', type=str, default='results')
     parser.add_argument('--knn_samples', type=int, default=1000, help='Number of test samples to use for KNN evaluation')
     parser.add_argument('--n_neighbors', type=int, default=5, help='Number of neighbors for KNN')
     parser.add_argument('--knn_runs', type=int, default=20, help='Number of KNN evaluation runs')
-    parser.add_argument('--graph', action='store_true', 
+    parser.add_argument('--graph', action='store_true',
                       help='Enable comparative plotting')
+    parser.add_argument('--recovery_dir', type=str, default='experiments/results', help='Directory containing previous experiment results')
+    parser.add_argument('--resume', action='store_true', help='Resume from interrupted experiments')
     return parser.parse_args()
 
 
@@ -52,6 +55,43 @@ def encode_dataset(model, dataloader, device):
             labels.append(target.numpy())
     
     return np.concatenate(latent_vecs), np.concatenate(labels)
+
+def get_completed_experiments(recovery_dir):
+    """Extract information about completed experiments from directory."""
+    completed = {}
+    pattern = r"(\d{8}_\d{6})_latent(\d+)_(\w+)_beta([\d.]+)"
+    
+    for exp_dir in Path(recovery_dir).glob("*"):
+        if not exp_dir.is_dir():
+            continue
+            
+        match = re.match(pattern, exp_dir.name)
+        if not match:
+            continue
+            
+        # Check if experiment is complete (has all required files)
+        metrics_file = exp_dir / 'metrics.json'
+        knn_metrics_file = exp_dir / 'knn_metrics.json'
+        if not (metrics_file.exists() and knn_metrics_file.exists()):
+            continue
+            
+        # Extract experiment parameters
+        _, latent_dim, distribution, beta = match.groups()
+        latent_dim = int(latent_dim)
+        beta = float(beta)
+        
+        # Load metrics
+        with open(knn_metrics_file) as f:
+            knn_metrics = json.load(f)
+            
+        completed[(distribution, beta, latent_dim)] = {
+            'accuracy_mean': knn_metrics['accuracy_mean'],
+            'accuracy_std': knn_metrics['accuracy_std'],
+            'f1_mean': knn_metrics['f1_mean'],
+            'f1_std': knn_metrics['f1_std']
+        }
+    
+    return completed
 
 def evaluate_knn(model, train_loader, test_loader, n_samples, n_neighbors, n_runs, device, save_dir):
     """
@@ -329,36 +369,68 @@ def main():
             ('powerspherical', 0.1): {'latent_dims': [], 'accuracy_means': [], 
                                     'accuracy_stds': [], 'f1_means': [], 'f1_stds': []}
         }
-        
-        for distribution in ['powerspherical','gaussian']: # TBD 
-            for beta in [1.0, 0.1]:
-                args.distribution = distribution
-                args.beta = beta
-                # if distribution == 'gaussian' and beta != 1.0:
-                #     continue
-                # elif distribution == 'powerspherical' and beta == 1.0:
-                #     continue
-                
-                for latent_dim in args.latent_dims:
-                    run_accuracies = []
-                    run_f1_scores = []
+        completed_experiments = {}
+        if args.resume:
+            completed_experiments = get_completed_experiments(args.recovery_dir) 
+        try:
+            for distribution in ['powerspherical','gaussian']: # TBD 
+                for beta in [1.0, 0.1]:
+                    args.distribution = distribution
+                    args.beta = beta
                     
-                    for run in range(args.knn_runs):
-                        print(f"Running {distribution}, beta={beta}, dim={latent_dim}, run {run+1}/{args.knn_runs}")
-                        metrics = run_experiment(args, latent_dim)
-                        run_accuracies.append(metrics['knn_metrics']['accuracy_mean'])
-                        run_f1_scores.append(metrics['knn_metrics']['f1_mean'])
-                    
-                    # calc statistics across runs
-                    results_dict[(distribution, beta)]['latent_dims'].append(latent_dim)
-                    results_dict[(distribution, beta)]['accuracy_means'].append(np.mean(run_accuracies))
-                    results_dict[(distribution, beta)]['accuracy_stds'].append(np.std(run_accuracies))
-                    results_dict[(distribution, beta)]['f1_means'].append(np.mean(run_f1_scores))
-                    results_dict[(distribution, beta)]['f1_stds'].append(np.std(run_f1_scores))
+                    for latent_dim in args.latent_dims:
+                        if (distribution, beta, latent_dim) in completed_experiments:
+                            print(f"Using existing results for {distribution}, beta={beta}, dim={latent_dim}")
+                            metrics = completed_experiments[(distribution, beta, latent_dim)]
+                            results_dict[(distribution, beta)]['latent_dims'].append(latent_dim)
+                            results_dict[(distribution, beta)]['accuracy_means'].append(metrics['accuracy_mean'])
+                            results_dict[(distribution, beta)]['accuracy_stds'].append(metrics['accuracy_std'])
+                            results_dict[(distribution, beta)]['f1_means'].append(metrics['f1_mean'])
+                            results_dict[(distribution, beta)]['f1_stds'].append(metrics['f1_std'])
+                            continue
+                        run_accuracies = []
+                        run_f1_scores = []
+                        
+                        for run in range(args.knn_runs):
+                            print(f"Running {distribution}, beta={beta}, dim={latent_dim}, run {run+1}/{args.knn_runs}")
+                            try:
+                                metrics = run_experiment(args, latent_dim)
+                                run_accuracies.append(metrics['knn_metrics']['accuracy_mean'])
+                                run_f1_scores.append(metrics['knn_metrics']['f1_mean'])
+                                
+                                results_dict[(distribution, beta)]['latent_dims'].append(latent_dim)
+                                results_dict[(distribution, beta)]['accuracy_means'].append(np.mean(run_accuracies))
+                                results_dict[(distribution, beta)]['accuracy_stds'].append(np.std(run_accuracies))
+                                results_dict[(distribution, beta)]['f1_means'].append(np.mean(run_f1_scores))
+                                results_dict[(distribution, beta)]['f1_stds'].append(np.std(run_f1_scores))
+                                
+                                plot_path = base_output_dir / f"{timestamp}_comparative_results_intermediate.png"
+                                plot_comparative_results(results_dict, plot_path)
+                                
+                            except Exception as e:
+                                print(f"Error in run {run+1} for {distribution}, beta={beta}, dim={latent_dim}: {str(e)}")
+                                continue
+                        
+                        # calc statistics across runs
+                        results_dict[(distribution, beta)]['latent_dims'].append(latent_dim)
+                        results_dict[(distribution, beta)]['accuracy_means'].append(np.mean(run_accuracies))
+                        results_dict[(distribution, beta)]['accuracy_stds'].append(np.std(run_accuracies))
+                        results_dict[(distribution, beta)]['f1_means'].append(np.mean(run_f1_scores))
+                        results_dict[(distribution, beta)]['f1_stds'].append(np.std(run_f1_scores))
+            
+            plot_path = base_output_dir / f"{timestamp}_comparative_results.png"
+            plot_comparative_results(results_dict, plot_path)
+
+        except Exception as e:
+            print(f"Error during experiments: {str(e)}")
+            # Save partial results before exiting
+            plot_path = base_output_dir / f"{timestamp}_comparative_results_partial.png"
+            plot_comparative_results(results_dict, plot_path)
+            raise e
         
-        plot_path = base_output_dir / f"{timestamp}_comparative_results.png"
-        plot_comparative_results(results_dict, plot_path)
-    
+        # save final results
+        plot_path = base_output_dir / f"{timestamp}_comparative_results_final.png"
+        plot_comparative_results(results_dict, plot_path) 
     else:
         run_experiment(args)
 
