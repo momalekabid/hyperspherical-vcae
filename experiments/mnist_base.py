@@ -84,8 +84,8 @@ def encode_dataset(model, data_loader):
 def encode_test_samples(model, test_loader, n_samples):
     """Get latent representations for random test samples"""
     model.eval()
-    data, labels = get_random_test_samples(test_loader, n_samples)
-    data = data.to(device)
+    data, labels = next(iter(test_loader))
+    data = data.to(device[:n_samples])
     
     with torch.no_grad():
         z_mean, _ = model.encode(data.view(-1, 784))
