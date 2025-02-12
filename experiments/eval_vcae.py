@@ -21,7 +21,7 @@ _DEVICE = torch.device("cuda" if torch.cuda.is_available() else "mps" if torch.b
 def parse_args():
     parser = argparse.ArgumentParser(description='Train VAE model')
     parser.add_argument('--dataset', type=str, default='fashionmnist', 
-                      choices=['mnist', 'fashionmnist', 'cifar10'])
+                      choices=['fashionmnist', 'cifar10'])
     parser.add_argument('--batch_size', type=int, default=128)
     parser.add_argument('--epochs', type=int, default=25)
     parser.add_argument('--distribution', type=str, default='powerspherical', 
@@ -69,18 +69,15 @@ def get_completed_experiments(recovery_dir):
         if not match:
             continue
             
-        # Check if experiment is complete (has all required files)
         metrics_file = exp_dir / 'metrics.json'
         knn_metrics_file = exp_dir / 'knn_metrics.json'
         if not (metrics_file.exists() and knn_metrics_file.exists()):
             continue
             
-        # Extract experiment parameters
         _, latent_dim, distribution, beta = match.groups()
         latent_dim = int(latent_dim)
         beta = float(beta)
         
-        # Load metrics
         with open(knn_metrics_file) as f:
             knn_metrics = json.load(f)
             
@@ -93,7 +90,7 @@ def get_completed_experiments(recovery_dir):
     
     return completed
 
-def evaluate_knn(model, train_loader, test_loader, n_samples, n_neighbors, n_runs, device, save_dir):
+def eval_vcae(model, train_loader, test_loader, n_samples, n_neighbors, n_runs, device, save_dir):
     """
     Evaluate classification performance using KNN in the latent space.
     Runs multiple times with different random test samples and returns mean/std metrics.
@@ -119,7 +116,6 @@ def evaluate_knn(model, train_loader, test_loader, n_samples, n_neighbors, n_run
             sampled_test_latent = test_latent
             sampled_test_labels = test_labels
         
-        # train and evaluate KNN
         m = "cosine" if model.distribution == "powerspherical" else "euclidean"
         knn = KNeighborsClassifier(n_neighbors=n_neighbors, metric=m)
         knn.fit(train_latent, train_labels)
@@ -127,7 +123,7 @@ def evaluate_knn(model, train_loader, test_loader, n_samples, n_neighbors, n_run
         
         # calculate metrics
         accuracy = accuracy_score(sampled_test_labels, predictions)
-        f1 = f1_score(sampled_test_labels, predictions, average='weighted')
+        f1 = f1_score(sampled_test_labels, predictions, average='macro') # differs 
         
         accuracies.append(accuracy)
         f1_scores.append(f1)
@@ -167,7 +163,7 @@ def get_dataset(dataset_name, batch_size):
     test_dataset = dataset_class(root='./data', train=False, download=True, transform=transform)
     
     train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
-    test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
+    test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=True)
     
     return train_loader, test_loader, in_channels
 
@@ -306,7 +302,7 @@ def train_model(model, train_loader, test_loader, optimizer, args, save_dir, dn)
         'beta': args.beta,
         'gamma': args.gamma
     }
-    knn_metrics = evaluate_knn(
+    knn_metrics = eval_vcae(
         model, train_loader, test_loader,
         args.knn_samples, args.n_neighbors, args.knn_runs,
         device=device, save_dir=save_dir
@@ -332,7 +328,7 @@ def run_experiment(args, latent_dim=None):
     
     # initialize model and optimizer
     model = VAE(latent_dim=latent_dim, in_channels=in_channels, distribution=args.distribution)
-    optimizer = optim.Adam(model.parameters(), lr=5e-4)
+    optimizer = optim.Adam(model.parameters(), lr=1e-2)
     
     # train model and get metrics
     metrics = train_model(
@@ -507,3 +503,5 @@ def plot_comparative_results(results_dict, save_path):
 
 if __name__ == '__main__':
     main()
+
+
