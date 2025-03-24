@@ -1,5 +1,4 @@
 import torch
-import torch.nn as nn
 from torch.utils.data import DataLoader, random_split
 from torchvision import datasets, transforms
 from torch.optim.lr_scheduler import LambdaLR
@@ -173,10 +172,6 @@ def run_experiment(
         model = model_class(h_dim=h_dim, z_dim=z_dim, distribution=distribution).to(
             device
         )
-
-        if torch.cuda.device_count() > 1:
-            print(f"using {torch.cuda.device_count()} gpus")
-            model = nn.DataParallel(model)
 
         optimizer = Adam(model.parameters(), lr=1e-3)
         run_results = train_and_evaluate(
