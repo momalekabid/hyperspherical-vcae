@@ -7,7 +7,10 @@ import numpy as np
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.metrics import accuracy_score
 import pandas as pd
-from models.vae_pws import ModelVAE, compute_loss
+import sys
+import os
+sys.path.append(os.path.join(os.path.dirname(__file__), '../models'))
+from vae_pws import ModelVAE, compute_loss
 
 # constants
 H_DIM = 128
@@ -16,8 +19,8 @@ BATCH_SIZE = 128
 EPOCHS = 50
 KNN_EVAL_SAMPLES = [100, 600, 1000]
 N_RUNS = 3 
-Z_DIMS = [2, 5, 10, 20, 40]
-PATIENCE = 50  # paper mentions lookahad of 50 epochs
+Z_DIMS = [20, 40]
+PATIENCE = 50  # paper mentions lookahead of 50 epochs
 DELTA = 1e-3
 # device configuration
 device = torch.device(

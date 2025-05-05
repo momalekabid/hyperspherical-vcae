@@ -1,23 +1,21 @@
 dataset: fashionmnist
-batch_size: 64 
-epochs: 3 
-lr: 0.1
-gamma: 0.0
+batch_size: 128 
+epochs: 50 
+lr: 0.05 
+gamma: 0.00
 ckpt_interval: 20 
-output_dir: refactor_results 
+output_dir: results 
 
 # eval params 
 knn_samples: 1000
 n_neighbors: 5
-knn_runs: 3 
+knn_runs: 3  # each run is an independent trial
 
-# dimensions / search space for beta constant (KL divergence)
+# dimensions / search space for dimensions & beta constant (KL divergence)
 latent_dims: [128, 256, 512, 1024, 2048, 4096]
-distributions: [powerspherical, gaussian, clifford]
-betas: [1, 0.5, 0.4, 0.3, 0.2, 0.1, 0.05]
-
-# number of independent runs for statistics
-runs: 3 
+distributions: [gaussian, powerspherical, clifford]
+betas: [1, 0.1] #[1.0, 0.9, 0.8. 0.7, 0.6, 0.5, 0.4, 0.3, 0.2, 0.1, 0.05]
 
 # seed
 seed: 42 
+runs: 3

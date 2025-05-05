@@ -1,6 +1,9 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import sys
+import os
+sys.path.append(os.path.join(os.path.dirname(__file__), '../../vmf'))
 from hyperspherical_vae.distributions import VonMisesFisher
 from hyperspherical_vae.distributions import HypersphericalUniform
 # we keep the vmf and powerspherical imports into different files for simplicity, as they share hypersphericalUniform

@@ -22,10 +22,6 @@ from tqdm import tqdm
 from models.vcae import VAE
 
 
-################################################################################
-# Utility functions
-################################################################################
-
 _DEVICE = (
     torch.device("cuda")
     if torch.cuda.is_available()
@@ -40,11 +36,6 @@ def load_config(config_path: Path) -> Dict[str, Any]:
     with open(config_path) as f:
         cfg = yaml.safe_load(f)
     return cfg
-
-
-################################################################################
-# Dataset helpers
-################################################################################
 
 
 def get_dataset(name: str, batch_size: int):
@@ -65,11 +56,6 @@ def get_dataset(name: str, batch_size: int):
     return train_loader, test_loader, in_channels
 
 
-################################################################################
-# Latent evaluation helpers
-################################################################################
-
-
 def encode_dataset(model: VAE, dl: DataLoader, device: torch.device):
     model.eval()
     latents, labels = [], []
@@ -81,10 +67,6 @@ def encode_dataset(model: VAE, dl: DataLoader, device: torch.device):
             labels.append(y.numpy())
     return np.concatenate(latents), np.concatenate(labels)
 
-
-################################################################################
-# Unitary check functions
-################################################################################
 
 def check_unitary_property(vectors: torch.Tensor) -> Dict[str, float]:
     """
@@ -149,15 +131,7 @@ def plot_unitary_properties(model: VAE, test_loader: DataLoader, save_path: Path
     vectors = torch.cat(all_vectors, dim=0)
     
     norms = torch.norm(vectors, dim=1)
-    plt.figure(figsize=(10, 6))
-    plt.hist(norms.numpy(), bins=50) 
-    plt.axvline(x=1.0, color='r', linestyle='--', label='Unit norm')
-    plt.title(f"Distribution of Encoder Vector Norms (mean={norms.mean():.4f}, std={norms.std():.4f})")
-    plt.xlabel("L2 Norm")
-    plt.ylabel("Count")
-    plt.legend()
-    plt.savefig(save_path / "encoder_vector_norms.png", dpi=300)
-    plt.close()
+    print(norms)
     
     fft_vectors = torch.fft.fft(vectors, dim=1)
     fft_magnitudes = torch.abs(torch.fft.fftshift(fft_vectors, dim=1))
@@ -184,82 +158,6 @@ def plot_unitary_properties(model: VAE, test_loader: DataLoader, save_path: Path
         plt.title("Cosine Similarity Between Encoded Vectors")
         plt.savefig(save_path / "encoder_vector_correlations.png", dpi=300)
         plt.close()
-
-
-################################################################################
-# t-SNE visualization
-################################################################################
-
-def generate_tsne_plot(
-    model: VAE, 
-    test_loader: DataLoader, 
-    save_path: Path,
-    n_samples: int = 1000,
-    perplexity: int = 30,
-    n_iter: int = 1000,
-    random_state: int = 42
-):
-    """
-    Generate t-SNE visualization of the latent space.
-    
-    Args:
-        model: The VAE model
-        test_loader: DataLoader for test data
-        save_path: Path to save the plot
-        n_samples: Number of test samples to use
-        perplexity: t-SNE perplexity parameter
-        n_iter: Number of iterations for t-SNE
-        random_state: Random seed for reproducibility
-    """
-    model.eval()
-    
-    latents, labels = encode_dataset(model, test_loader, _DEVICE)
-    
-    if n_samples < len(labels):
-        indices = np.random.choice(len(labels), n_samples, replace=False)
-        latents = latents[indices]
-        labels = labels[indices]
-    
-    print(f"Computing t-SNE for {len(latents)} samples (dim={latents.shape[1]})...")
-    tsne = TSNE(
-        n_components=2, 
-        perplexity=min(perplexity, len(latents) - 1), 
-        n_iter=n_iter, 
-        random_state=random_state,
-        verbose=1
-    )
-    
-    try:
-        tsne_results = tsne.fit_transform(latents)
-        
-        plt.figure(figsize=(10, 8))
-        
-        unique_labels = np.unique(labels)
-        colors = plt.cm.rainbow(np.linspace(0, 1, len(unique_labels)))
-        
-        for i, label in enumerate(unique_labels):
-            mask = labels == label
-            plt.scatter(
-                tsne_results[mask, 0],
-                tsne_results[mask, 1],
-                c=[colors[i]],
-                label=f"Class {label}",
-                alpha=0.7,
-                s=20
-            )
-        
-        plt.title(f"t-SNE Visualization of Latent Space ({model.distribution} distribution)")
-        plt.xlabel("t-SNE Dimension 1")
-        plt.ylabel("t-SNE Dimension 2")
-        plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
-        plt.tight_layout()
-        plt.savefig(save_path, dpi=300, bbox_inches="tight")
-        plt.close()
-        
-        return True
-    except Exception as e:
-        print(f"t-SNE generation failed: {str(e)}")
-        return False
 
 
 def knn_eval(
@@ -306,9 +204,9 @@ def knn_eval(
     }
 
 
-################################################################################
-# Checkpoint utilities
-################################################################################
+########################
+# training 
+########################
 
 
 def save_checkpoint(
@@ -332,10 +230,6 @@ def load_checkpoint(model: VAE, optimizer: optim.Optimizer, ckpt_path: Path) -> 
     optimizer.load_state_dict(ckpt["optim_state"])
     return ckpt["epoch"]
 
-
-################################################################################
-# Training utilities
-################################################################################
 
 
 def train_one_experiment(
@@ -364,7 +258,6 @@ def train_one_experiment(
     model = VAE(latent_dim=latent_dim, in_channels=in_channels, distribution=distribution).to(_DEVICE)
     optimizer = optim.Adam(model.parameters(), lr=cfg.get("lr", 1e-3))
 
-    # Resume training if checkpoint exists
     ckpt_path = exp_dir / "checkpoint.pt"
     start_epoch = 0
     if resume and ckpt_path.exists():
@@ -393,20 +286,16 @@ def train_one_experiment(
         if (epoch + 1) % cfg.get("ckpt_interval", 5) == 0:
             save_checkpoint(model, optimizer, epoch, ckpt_path)
 
-    # Final checkpoint / save
     save_checkpoint(model, optimizer, cfg["epochs"] - 1, ckpt_path)
 
-    # Check unitary properties of encoder vectors
     model.eval()
     with torch.no_grad():
         batch_data = next(iter(test_loader))[0].to(_DEVICE)
         mu, _ = model.encoder(batch_data)
         unitary_metrics = check_unitary_property(mu)
     
-    # Save unitary properties plots
     plot_unitary_properties(model, test_loader, exp_dir)
     
-    # Generate t-SNE visualization
     tsne_path = exp_dir / "tsne_visualization.png"
     generate_tsne_plot(
         model,
@@ -443,17 +332,65 @@ def train_one_experiment(
     return knn_metrics
 
 
-################################################################################
-# Plotting helpers
-################################################################################
-
+##################################
+# plotting
+##################################
+def generate_tsne_plot(
+    model: VAE,
+    test_loader: DataLoader,
+    save_path: Path,
+    n_samples: int = 1000,
+    perplexity: int = 30,
+    n_iter: int = 1000
+):
+    """
+    Generate and save a t-SNE plot of the latent space.
+    
+    Args:
+        model: The VAE model
+        test_loader: DataLoader for test data
+        save_path: Path to save the t-SNE plot
+        n_samples: Number of samples to use for t-SNE
+        perplexity: Perplexity parameter for t-SNE
+        n_iter: Number of iterations for t-SNE
+    """
+    model.eval()
+    latents, labels = [], []
+    
+    with torch.no_grad():
+        for data, target in test_loader:
+            data = data.to(_DEVICE)
+            mu, _ = model.encoder(data)
+            latents.append(mu.cpu().numpy())
+            labels.append(target.numpy())
+            
+            # Break once we have enough samples
+            if len(np.concatenate(labels)) >= n_samples:
+                break
+    
+    latents = np.concatenate(latents)[:n_samples]
+    labels = np.concatenate(labels)[:n_samples]
+    
+    # Apply t-SNE
+    tsne = TSNE(n_components=2, perplexity=perplexity, n_iter=n_iter, random_state=42)
+    tsne_results = tsne.fit_transform(latents)
+    
+    # Create plot
+    plt.figure(figsize=(10, 8))
+    scatter = plt.scatter(tsne_results[:, 0], tsne_results[:, 1], c=labels, cmap='tab10', alpha=0.8)
+    plt.colorbar(scatter, label='Class')
+    plt.title(f"t-SNE Visualization of Latent Space ({model.distribution} distribution)")
+    plt.xlabel("t-SNE Component 1")
+    plt.ylabel("t-SNE Component 2")
+    plt.tight_layout()
+    plt.savefig(save_path, dpi=300)
+    plt.close()
 
 def compile_results(results: Dict[Tuple[str, float], Dict[str, List[Any]]]) -> Dict[Tuple[str, float], Dict[str, List[Any]]]:
     """Utility just returns same dict but ensures latent dims are sorted."""
     compiled_results = {}
     
     for k, result_data in results.items():
-        # Create a new entry for this key with empty lists
         compiled_results[k] = {
             "latent_dims": [],
             "acc_mean": [],
@@ -463,11 +400,9 @@ def compile_results(results: Dict[Tuple[str, float], Dict[str, List[Any]]]) -> D
             "unitary_metrics": result_data.get("unitary_metrics", [])
         }
         
-        # Skip if no data available
         if not result_data.get("latent_dims") or len(result_data["latent_dims"]) == 0:
             continue
             
-        # Zip and sort only if we have data
         tmp = list(zip(
             result_data["latent_dims"], 
             result_data.get("acc_mean", [0] * len(result_data["latent_dims"])), 
@@ -477,7 +412,7 @@ def compile_results(results: Dict[Tuple[str, float], Dict[str, List[Any]]]) -> D
         ))
         tmp.sort(key=lambda t: t[0])
         
-        if tmp:  # If we have data after sorting
+        if tmp:
             (ld, am, asd, fm, fsd) = zip(*tmp)
             compiled_results[k]["latent_dims"] = list(ld)
             compiled_results[k]["acc_mean"] = list(am)
@@ -499,12 +434,11 @@ def plot_results(results: Dict[Tuple[str, float], Dict[str, List[Any]]], save_pa
         ("clifford", 0.1): ("red", "--", "Clifford (β=0.1)"),
     }
 
-    # Track all latent dimensions to set x-axis ticks properly
     all_latent_dims = set()
 
     for key, m in results.items():
         if not m.get("latent_dims") or len(m["latent_dims"]) == 0:
-            continue  # Skip if no data
+            continue 
             
         color, style, label = styles.get(key, ("black", "-", str(key)))
         
@@ -515,7 +449,6 @@ def plot_results(results: Dict[Tuple[str, float], Dict[str, List[Any]]], save_pa
         ax2.errorbar(m["latent_dims"], m["f1_mean"], yerr=m["f1_std"], 
                     color=color, linestyle=style, marker="o", capsize=4, label=label)
 
-    # Only configure axes if we have data
     if all_latent_dims:
         for ax in (ax1, ax2):
             ax.set_xscale("log", base=2)
@@ -530,7 +463,6 @@ def plot_results(results: Dict[Tuple[str, float], Dict[str, List[Any]]], save_pa
         plt.tight_layout()
         plt.savefig(save_path, dpi=300, bbox_inches="tight")
     else:
-        # Create a simple empty plot with a message if no data
         for ax in (ax1, ax2):
             ax.text(0.5, 0.5, "No data available yet", 
                    horizontalalignment='center', verticalalignment='center')
@@ -560,7 +492,6 @@ def plot_unitary_metrics(results: Dict[Tuple[str, float], Dict[str, List[Any]]],
         ("clifford", 0.1): ("red", "--", "Clifford (β=0.1)"),
     }
     
-    # Track if we have any data to plot
     has_data = False
     
     for key, metrics in results.items():
@@ -573,7 +504,6 @@ def plot_unitary_metrics(results: Dict[Tuple[str, float], Dict[str, List[Any]]],
         has_data = True
         color, style, label = styles.get(key, ("black", "-", str(key)))
         
-        # Extract metrics if they exist
         norm_devs = []
         fft_uniforms = []
         for i, ld in enumerate(metrics["latent_dims"]):
@@ -636,33 +566,6 @@ def plot_confusion_matrix(cm: np.ndarray, save_path: Path):
     plt.close()
 
 
-################################################################################
-# Comparison and t-SNE plots
-################################################################################
-
-def plot_tsne_comparison(results: Dict[Tuple[str, float], Dict[str, Any]], base_output: Path, timestamp: str):
-    """
-    Create a comparison of t-SNE visualizations across different distributions.
-    
-    Args:
-        results: Dictionary with experiment results
-        base_output: Base output directory
-        timestamp: Timestamp string for naming
-    """
-    # This is a placeholder - in practice, we'd need to either:
-    # 1. Load existing t-SNE plots and arrange them, or
-    # 2. Generate new t-SNE plots for selected models
-    
-    # Since t-SNE is generated per-experiment, this function could create
-    # a summary page showing thumbnails of individual t-SNE plots
-    pass
-
-
-################################################################################
-# Main entry point
-################################################################################
-
-
 def main():
     parser = argparse.ArgumentParser(description="Latent dimension vs KNN evaluation")
     parser.add_argument("--config", type=str, required=True, help="Path to YAML config file")
@@ -676,7 +579,6 @@ def main():
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
-    # Initialize results dictionary with proper structure
     results: Dict[Tuple[str, float], Dict[str, List[Any]]] = {}
 
     combinations = list(product(cfg["distributions"], cfg["betas"], cfg["latent_dims"], range(cfg["runs"])))
@@ -708,7 +610,6 @@ def main():
                 resume=args.resume,
             )
 
-            # Add results to appropriate key
             results[key]["latent_dims"].append(ld)
             results[key]["acc_mean"].append(m["accuracy_mean"])
             results[key]["acc_std"].append(m["accuracy_std"])
@@ -721,9 +622,7 @@ def main():
                 plot_results(compiled, base_output / f"plot_{timestamp}_intermediate.png")
                 plot_unitary_metrics(compiled, base_output / f"unitary_metrics_{timestamp}_intermediate.png")
                 
-                # Save intermediate results to prevent loss on interrupt
                 with open(base_output / f"results_{timestamp}_intermediate.json", "w") as f:
-                    # convert tuple keys to strings for JSON serialization
                     serializable_results = {f"{k[0]}_{k[1]}": v for k, v in results.items()}
                     json.dump(serializable_results, f, indent=2)
             except Exception as e:
@@ -733,7 +632,7 @@ def main():
         plot_unitary_metrics(results, base_output / f"unitary_metrics_{timestamp}.png")
     
     # plot final results
-    plot_tsne_comparison(results, base_output, timestamp)
+    # TODO: t-sne and pca
     plot_results(compile_results(results), base_output / f"plot_{timestamp}.png")
     plot_unitary_metrics(results, base_output / f"unitary_metrics_{timestamp}.png")
 

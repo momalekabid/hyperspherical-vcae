@@ -7,11 +7,13 @@ import numpy as np
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.metrics import accuracy_score, f1_score
 import pandas as pd
-from models.vae_clifford import ModelVAE, compute_loss
 import torch.nn as nn
 from sklearn.manifold import TSNE
 import matplotlib.pyplot as plt
 import os
+import sys
+sys.path.append(os.path.join(os.path.dirname(__file__), '../models'))
+from clifford import ModelVAE, compute_loss
 
 # params reconstructed from https://arxiv.org/abs/1804.00891
 H_DIM = 128
@@ -19,8 +21,8 @@ Z_DIM = 10
 BATCH_SIZE = 64
 EPOCHS = 50 
 KNN_EVAL_SAMPLES = [100, 600, 1000]
-N_RUNS = 20 
-Z_DIMS = [2, 5, 10, 20, 40]
+N_RUNS = 3 
+Z_DIMS = [20, 40]
 PATIENCE = 50
 DELTA = 1e-3
 
@@ -197,7 +199,7 @@ def run_experiment(z_dim, device, n_runs=N_RUNS):
     for run in range(n_runs):
         print(f"\nRun {run + 1}/{n_runs} for z_dim = {z_dim}")
         model = ModelVAE(H_DIM, z_dim, device=device).to(device)
-        optimizer = Adam(model.parameters(), lr=1e-3)
+        optimizer = Adam(model.parameters(), lr=1e-4)
 
         run_results = train_and_evaluate(
             model, train_loader, val_loader, test_loader, optimizer, device, z_dim=z_dim

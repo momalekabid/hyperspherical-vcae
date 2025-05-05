@@ -4,35 +4,34 @@ import torch.nn.functional as F
 import matplotlib.pyplot as plt
 import numpy as np
 from power_spherical import PowerSpherical, HypersphericalUniform
-# Clifford torus distribution imports
-from .clifford import CliffordTorusDistribution, CliffordTorusUniform
+from clifford import CliffordTorusDistribution, CliffordTorusUniform
 
 
 class Encoder(nn.Module):
     def __init__(self, latent_dim, in_channels=1):
         super(Encoder, self).__init__()
-        # self.conv1 = nn.Conv2d(in_channels, 64, 3, stride=2, padding=1)
-        # self.conv2 = nn.Conv2d(64, 128, 3, stride=2, padding=1)
-        # self.conv3 = nn.Conv2d(128, 256, 3, stride=2, padding=1)
-        self.conv1 = nn.Conv2d(in_channels, 32, 2, stride=2, padding=1)
-        self.conv2 = nn.Conv2d(32, 64, 4, stride=2, padding=1)
-        self.conv3 = nn.Conv2d(64, 128, 4, stride=2, padding=1)
-        self.conv4 = nn.Conv2d(128, 256, 6, stride=2, padding=3)
-        # self.conv4 = nn.Conv2d(256, 512, 3, stride=2, padding=1)
-
+        self.conv1 = nn.Conv2d(in_channels, 64, 3, stride=2, padding=1)
+        self.conv2 = nn.Conv2d(64, 128, 3, stride=2, padding=1)
+        self.conv3 = nn.Conv2d(128, 256, 3, stride=2, padding=1)
+        self.conv4 = nn.Conv2d(256, 512, 3, stride=2, padding=1)
+        # alternative/old arch. below {}
+        # self.conv1 = nn.Conv2d(in_channels, 32, 2, stride=2, padding=1)
+        # self.conv2 = nn.Conv2d(32, 64, 4, stride=2, padding=1)
+        # self.conv3 = nn.Conv2d(64, 128, 4, stride=2, padding=1)
+        # self.conv4 = nn.Conv2d(128, 256, 6, stride=2, padding=3)
         # self.fc_mu = nn.Sequential(
         #     nn.Linear(512 * 2 * 2, 1024),
         #     nn.ReLU(),
-        #     nn.Linear(1024, latent_dim)
-        # )
-        # self.fc_logvar = nn.Linear(512 * 2 * 2, 1)
+        #     nn.Linear(1024, latent_dim) ...
+        # self.fc_logvar = nn.Sequential(
+        #     nn.Linear(512 * 2 * 2, 1024),
+        #     nn.ReLU(),
+        #     nn.Linear(1024, 1),
+        #     nn.Softplus()
+        # ))
+        self.fc_logvar = nn.Linear(512 * 2 * 2, 1)
         self.fc_mu = nn.Linear(512 * 2 * 2, latent_dim)
-        self.fc_logvar = nn.Sequential(
-            nn.Linear(512 * 2 * 2, 1024),
-            nn.ReLU(),
-            nn.Linear(1024, 1),
-            nn.Softplus()
-        )
+
 
     def forward(self, x):
         x = F.relu(self.conv1(x))
@@ -51,7 +50,6 @@ class Encoder(nn.Module):
         return mu, logvar
 
 
-# define the decoder
 class Decoder(nn.Module):
     """Generic decoder used by all latent distributions.
 
@@ -68,14 +66,14 @@ class Decoder(nn.Module):
         #     nn.ReLU(),
         #     nn.Linear(1024, 512 * 2 * 2)
         # )
-        self.conv_trans0 = nn.ConvTranspose2d(256, 128, 6, stride=2, padding=3)
-        self.conv_trans1 = nn.ConvTranspose2d(128, 64, 4, stride=2, padding=1)
-        self.conv_trans2 = nn.ConvTranspose2d(64, 32, 4, stride=2, padding=1)
-        self.conv_trans3 = nn.ConvTranspose2d(32, out_channels, 4, stride=2, padding=1)
-        # self.conv_trans1 = nn.ConvTranspose2d(512, 256, 3, stride=2, padding=1, output_padding=1)
-        # self.conv_trans2 = nn.ConvTranspose2d(256, 128, 3, stride=2, padding=1, output_padding=1)
-        # self.conv_trans3 = nn.ConvTranspose2d(128, 64, 3, stride=2, padding=1, output_padding=1)
-        # self.conv_trans4 = nn.ConvTranspose2d(64, out_channels, 3, stride=2, padding=1, output_padding=1)
+        # self.conv_trans0 = nn.ConvTranspose2d(256, 128, 6, stride=2, padding=3)
+        # self.conv_trans1 = nn.ConvTranspose2d(128, 64, 4, stride=2, padding=1)
+        # self.conv_trans2 = nn.ConvTranspose2d(64, 32, 4, stride=2, padding=1)
+        # self.conv_trans3 = nn.ConvTranspose2d(32, out_channels, 4, stride=2, padding=1)
+        self.conv_trans1 = nn.ConvTranspose2d(512, 256, 3, stride=2, padding=1, output_padding=1)
+        self.conv_trans2 = nn.ConvTranspose2d(256, 128, 3, stride=2, padding=1, output_padding=1)
+        self.conv_trans3 = nn.ConvTranspose2d(128, 64, 3, stride=2, padding=1, output_padding=1)
+        self.conv_trans4 = nn.ConvTranspose2d(64, out_channels, 3, stride=2, padding=1, output_padding=1)
 
     def forward(self, z):
         x = self.fc(z)
