@@ -33,9 +33,9 @@ print(f"Using device: {device}")
 transform = transforms.Compose(
     [
         transforms.ToTensor(),
-        transforms.Lambda(
+        # transforms.Lambda(
             # lambda x: (x > torch.rand_like(x)).float()
-        ),  # dynamic binarization
+        # ),  # dynamic binarization
     ]
 )
 dataset = datasets.MNIST("../datasets", train=True, download=True, transform=transform)
@@ -184,7 +184,7 @@ def run_experiment(
             device
         )
 
-        optimizer = Adam(model.parameters(), lr=1e-3) # TODO: also modify for d=40 
+        optimizer = Adam(model.parameters(), lr=1e-4) # TODO: also modify for d=40 
         run_results = train_and_evaluate(
             model, train_loader, val_loader, test_loader, optimizer, device
         )

@@ -68,7 +68,7 @@ def encode_dataset(model: VAE, dl: DataLoader, device: torch.device):
 
 def plot_fft_spectrum(model: VAE, test_loader: DataLoader, save_path: Path):
     """
-    Generate and save plots of FFT properties from encoder vectors.
+    Generate and save plots of FFT properties from encoded vectors.
     
     Args:
         model: The VAE model
@@ -315,41 +315,6 @@ def generate_tsne_plot(
     plt.savefig(save_path, dpi=300)
     plt.close()
 
-def compile_results(results: Dict[Tuple[str, float], Dict[str, List[Any]]]) -> Dict[Tuple[str, float], Dict[str, List[Any]]]:
-    """Utility just returns same dict but ensures latent dims are sorted."""
-    compiled_results = {}
-    
-    for k, result_data in results.items():
-        compiled_results[k] = {
-            "latent_dims": [],
-            "acc_mean": [],
-            "acc_std": [],
-            "f1_mean": [],
-            "f1_std": [],
-        }
-        
-        if not result_data.get("latent_dims") or len(result_data["latent_dims"]) == 0:
-            continue
-            
-        tmp = list(zip(
-            result_data["latent_dims"], 
-            result_data.get("acc_mean", [0] * len(result_data["latent_dims"])), 
-            result_data.get("acc_std", [0] * len(result_data["latent_dims"])), 
-            result_data.get("f1_mean", [0] * len(result_data["latent_dims"])), 
-            result_data.get("f1_std", [0] * len(result_data["latent_dims"]))
-        ))
-        tmp.sort(key=lambda t: t[0])
-        
-        if tmp:
-            (ld, am, asd, fm, fsd) = zip(*tmp)
-            compiled_results[k]["latent_dims"] = list(ld)
-            compiled_results[k]["acc_mean"] = list(am)
-            compiled_results[k]["acc_std"] = list(asd)
-            compiled_results[k]["f1_mean"] = list(fm)
-            compiled_results[k]["f1_std"] = list(fsd)
-    
-    return compiled_results
-
 
 def plot_results(results: Dict[Tuple[str, float], Dict[str, List[Any]]], save_path: Path):
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 6))
@@ -363,21 +328,33 @@ def plot_results(results: Dict[Tuple[str, float], Dict[str, List[Any]]], save_pa
     }
 
     all_latent_dims = set()
+    has_data = False
 
-    for key, m in results.items():
-        if not m.get("latent_dims") or len(m["latent_dims"]) == 0:
-            continue 
+    for key, metrics in results.items():
+        latent_dims = metrics.get("latent_dims", [])
+        if not latent_dims:
+            continue
             
+        has_data = True
+        all_latent_dims.update(latent_dims)
+
+        # line style info 
         color, style, label = styles.get(key, ("black", "-", str(key)))
         
-        all_latent_dims.update(m["latent_dims"])
+        sorted_indices = sorted(range(len(latent_dims)), key=lambda i: latent_dims[i])
+        sorted_dims = [latent_dims[i] for i in sorted_indices]
+        sorted_acc_mean = [metrics["acc_mean"][i] for i in sorted_indices]
+        sorted_acc_std = [metrics["acc_std"][i] for i in sorted_indices]
+        sorted_f1_mean = [metrics["f1_mean"][i] for i in sorted_indices]
+        sorted_f1_std = [metrics["f1_std"][i] for i in sorted_indices]
         
-        ax1.errorbar(m["latent_dims"], m["acc_mean"], yerr=m["acc_std"], 
+        # plot on both axes
+        ax1.errorbar(sorted_dims, sorted_acc_mean, yerr=sorted_acc_std, 
                     color=color, linestyle=style, marker="o", capsize=4, label=label)
-        ax2.errorbar(m["latent_dims"], m["f1_mean"], yerr=m["f1_std"], 
+        ax2.errorbar(sorted_dims, sorted_f1_mean, yerr=sorted_f1_std, 
                     color=color, linestyle=style, marker="o", capsize=4, label=label)
 
-    if all_latent_dims:
+    if has_data:
         for ax in (ax1, ax2):
             ax.set_xscale("log", base=2)
             ax.set_xticks(sorted(all_latent_dims))
@@ -391,27 +368,13 @@ def plot_results(results: Dict[Tuple[str, float], Dict[str, List[Any]]], save_pa
         plt.tight_layout()
         plt.savefig(save_path, dpi=300, bbox_inches="tight")
     else:
-        print("in progress...")
+        for ax in (ax1, ax2):
+            ax.text(0.5, 0.5, "No data available yet", 
+                   horizontalalignment='center', verticalalignment='center')
+            ax.set_xticks([])
+            ax.set_yticks([])
+        plt.savefig(save_path, dpi=300)
     
-    plt.close()
-
-
-def plot_confusion_matrix(cm: np.ndarray, save_path: Path):
-    """Simple heat-map confusion matrix."""
-    fig, ax = plt.subplots(figsize=(6, 5))
-    im = ax.imshow(cm, interpolation="nearest", cmap="Blues")
-    plt.colorbar(im, ax=ax)
-    ax.set_xlabel("Predicted")
-    ax.set_ylabel("True")
-    ax.set_title("Confusion Matrix")
-
-    # annotate
-    for i in range(cm.shape[0]):
-        for j in range(cm.shape[1]):
-            ax.text(j, i, int(cm[i, j]), ha="center", va="center", color="black", fontsize=7)
-
-    plt.tight_layout()
-    plt.savefig(save_path, dpi=300)
     plt.close()
 
 
@@ -465,19 +428,19 @@ def main():
             results[key]["f1_std"].append(m["f1_std"])
 
             try:
-                compiled = compile_results(results)
-                plot_results(compiled, base_output / f"plot_{timestamp}_intermediate.png")
+                plot_results(results, base_output / f"plot_{timestamp}_intermediate.png")
                 
+                # save intermediate results
                 with open(base_output / f"results_{timestamp}_intermediate.json", "w") as f:
                     serializable_results = {f"{k[0]}_{k[1]}": v for k, v in results.items()}
                     json.dump(serializable_results, f, indent=2)
             except Exception as e:
-                print(f"Warning: Intermediate saving/plotting failed")
+                print(f"Warning: Intermediate saving/plotting failed: {e}")
     except KeyboardInterrupt:
-        plot_results(compile_results(results), base_output / f"plot_{timestamp}.png")
+        plot_results(results, base_output / f"plot_{timestamp}.png")
     
     # plot final results
-    plot_results(compile_results(results), base_output / f"plot_{timestamp}.png")
+    plot_results(results, base_output / f"plot_{timestamp}.png")
 
 
 if __name__ == "__main__":
