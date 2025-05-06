@@ -4,7 +4,7 @@ import torch.nn.functional as F
 import matplotlib.pyplot as plt
 import numpy as np
 from power_spherical import PowerSpherical, HypersphericalUniform
-from clifford import CliffordTorusDistribution, CliffordTorusUniform
+from models.clifford import CliffordTorusDistribution, CliffordTorusUniform
 
 
 class Encoder(nn.Module):

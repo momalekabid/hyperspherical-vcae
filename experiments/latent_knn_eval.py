@@ -26,13 +26,11 @@ _DEVICE = (
     torch.device("cuda")
     if torch.cuda.is_available()
     else torch.device("cpu")
-    if torch.backends.mps.is_available()
-    else torch.device("cpu")
 )
 print(f"Using device: {_DEVICE}")
 
 def load_config(config_path: Path) -> Dict[str, Any]:
-    """Load YAML config file."""
+    """ YAML config file."""
     with open(config_path) as f:
         cfg = yaml.safe_load(f)
     return cfg
@@ -68,51 +66,9 @@ def encode_dataset(model: VAE, dl: DataLoader, device: torch.device):
     return np.concatenate(latents), np.concatenate(labels)
 
 
-def check_unitary_property(vectors: torch.Tensor) -> Dict[str, float]:
+def plot_fft_spectrum(model: VAE, test_loader: DataLoader, save_path: Path):
     """
-    Check if encoded vectors have unitary properties:
-    1. Unit norm (normalized vectors)
-    2. Flat frequency spectrum
-    3. Orthogonality of vectors (if applicable)
-    
-    Args:
-        vectors: Tensor of shape (batch_size, latent_dim)
-    
-    Returns:
-        Dict with metrics about unitary properties
-    """
-    results = {}
-    
-    norms = torch.norm(vectors, dim=1)
-    results["mean_norm"] = float(torch.mean(norms).item())
-    results["norm_std"] = float(torch.std(norms).item())
-    results["norm_deviation"] = float(torch.mean(torch.abs(norms - 1.0)).item())
-    
-    fft_vectors = torch.fft.fft(vectors, dim=1)
-    fft_magnitudes = torch.abs(torch.fft.fftshift(fft_vectors, dim=1))
-    
-    mean_fft_magnitude = torch.mean(fft_magnitudes, dim=0)
-    target_magnitude = torch.ones_like(mean_fft_magnitude) / math.sqrt(vectors.shape[1])
-    
-    results["fft_uniformity"] = float(F.mse_loss(mean_fft_magnitude, target_magnitude).item())
-    results["fft_std"] = float(torch.std(mean_fft_magnitude).item())
-    
-    if vectors.shape[0] > 1 and vectors.shape[0] <= 1000 and vectors.shape[1] <= 1000:
-        normalized_vectors = F.normalize(vectors, p=2, dim=1)
-        dot_products = torch.mm(normalized_vectors, normalized_vectors.t())
-        
-        mask = ~torch.eye(dot_products.shape[0], dtype=torch.bool, device=dot_products.device)
-        off_diag_dots = dot_products[mask]
-        
-        results["mean_abs_correlation"] = float(torch.mean(torch.abs(off_diag_dots)).item())
-        results["max_abs_correlation"] = float(torch.max(torch.abs(off_diag_dots)).item())
-    
-    return results
-
-
-def plot_unitary_properties(model: VAE, test_loader: DataLoader, save_path: Path):
-    """
-    Generate and save plots of unitary properties from encoder vectors.
+    Generate and save plots of FFT properties from encoder vectors.
     
     Args:
         model: The VAE model
@@ -126,12 +82,9 @@ def plot_unitary_properties(model: VAE, test_loader: DataLoader, save_path: Path
         for data, _ in test_loader:
             data = data.to(_DEVICE)
             mu, _ = model.encoder(data)
-            all_vectors.append(mu.cpu())  # must move to CPU before collecting
+            all_vectors.append(mu.cpu())
     
     vectors = torch.cat(all_vectors, dim=0)
-    
-    norms = torch.norm(vectors, dim=1)
-    print(norms)
     
     fft_vectors = torch.fft.fft(vectors, dim=1)
     fft_magnitudes = torch.abs(torch.fft.fftshift(fft_vectors, dim=1))
@@ -147,17 +100,6 @@ def plot_unitary_properties(model: VAE, test_loader: DataLoader, save_path: Path
     plt.legend()
     plt.savefig(save_path / "encoder_fft_spectrum.png", dpi=300)
     plt.close()
-    
-    if vectors.shape[0] <= 100: 
-        normalized_vectors = F.normalize(vectors[:100], p=2, dim=1)  # take at most 100 samples
-        dot_products = torch.mm(normalized_vectors, normalized_vectors.t())
-        
-        plt.figure(figsize=(8, 8))
-        plt.imshow(dot_products.numpy(), cmap='coolwarm', vmin=-1, vmax=1)
-        plt.colorbar(label='Cosine Similarity')
-        plt.title("Cosine Similarity Between Encoded Vectors")
-        plt.savefig(save_path / "encoder_vector_correlations.png", dpi=300)
-        plt.close()
 
 
 def knn_eval(
@@ -223,13 +165,11 @@ def save_checkpoint(
     torch.save(ckpt, ckpt_path)
 
 
-
 def load_checkpoint(model: VAE, optimizer: optim.Optimizer, ckpt_path: Path) -> int:
     ckpt = torch.load(ckpt_path, map_location=_DEVICE)
     model.load_state_dict(ckpt["model_state"])
     optimizer.load_state_dict(ckpt["optim_state"])
     return ckpt["epoch"]
-
 
 
 def train_one_experiment(
@@ -242,7 +182,7 @@ def train_one_experiment(
     base_output: Path,
     resume: bool = False,
 ) -> Dict[str, Any]:
-    """Train a single configuration and return metrics."""
+    """Trains/evaluates for a single configuration"""
 
     train_loader, test_loader, in_channels = get_dataset(dataset_name, cfg["batch_size"])
 
@@ -287,14 +227,8 @@ def train_one_experiment(
             save_checkpoint(model, optimizer, epoch, ckpt_path)
 
     save_checkpoint(model, optimizer, cfg["epochs"] - 1, ckpt_path)
-
-    model.eval()
-    with torch.no_grad():
-        batch_data = next(iter(test_loader))[0].to(_DEVICE)
-        mu, _ = model.encoder(batch_data)
-        unitary_metrics = check_unitary_property(mu)
     
-    plot_unitary_properties(model, test_loader, exp_dir)
+    plot_fft_spectrum(model, test_loader, exp_dir)
     
     tsne_path = exp_dir / "tsne_visualization.png"
     generate_tsne_plot(
@@ -315,9 +249,6 @@ def train_one_experiment(
         cfg["knn_runs"],
         _DEVICE,
     )
-
-    # Add unitary metrics to the output
-    knn_metrics["unitary_metrics"] = unitary_metrics
 
     # persist metrics
     with open(metrics_file, "w") as f:
@@ -364,24 +295,22 @@ def generate_tsne_plot(
             latents.append(mu.cpu().numpy())
             labels.append(target.numpy())
             
-            # Break once we have enough samples
             if len(np.concatenate(labels)) >= n_samples:
                 break
     
     latents = np.concatenate(latents)[:n_samples]
     labels = np.concatenate(labels)[:n_samples]
     
-    # Apply t-SNE
+    # t-SNE params passed through 
     tsne = TSNE(n_components=2, perplexity=perplexity, n_iter=n_iter, random_state=42)
     tsne_results = tsne.fit_transform(latents)
     
-    # Create plot
     plt.figure(figsize=(10, 8))
     scatter = plt.scatter(tsne_results[:, 0], tsne_results[:, 1], c=labels, cmap='tab10', alpha=0.8)
     plt.colorbar(scatter, label='Class')
     plt.title(f"t-SNE Visualization of Latent Space ({model.distribution} distribution)")
-    plt.xlabel("t-SNE Component 1")
-    plt.ylabel("t-SNE Component 2")
+    plt.xlabel("c1")
+    plt.ylabel("c2")
     plt.tight_layout()
     plt.savefig(save_path, dpi=300)
     plt.close()
@@ -397,7 +326,6 @@ def compile_results(results: Dict[Tuple[str, float], Dict[str, List[Any]]]) -> D
             "acc_std": [],
             "f1_mean": [],
             "f1_std": [],
-            "unitary_metrics": result_data.get("unitary_metrics", [])
         }
         
         if not result_data.get("latent_dims") or len(result_data["latent_dims"]) == 0:
@@ -463,87 +391,8 @@ def plot_results(results: Dict[Tuple[str, float], Dict[str, List[Any]]], save_pa
         plt.tight_layout()
         plt.savefig(save_path, dpi=300, bbox_inches="tight")
     else:
-        for ax in (ax1, ax2):
-            ax.text(0.5, 0.5, "No data available yet", 
-                   horizontalalignment='center', verticalalignment='center')
-            ax.set_xticks([])
-            ax.set_yticks([])
-        plt.savefig(save_path, dpi=300)
+        print("in progress...")
     
-    plt.close()
-
-
-def plot_unitary_metrics(results: Dict[Tuple[str, float], Dict[str, List[Any]]], save_path: Path):
-    """
-    Plot unitary metrics across different latent dimensions and distributions.
-    
-    Args:
-        results: Dictionary with results containing unitary metrics
-        save_path: Path to save the plot
-    """
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 6))
-    
-    styles = {
-        ("gaussian", 1.0): ("green", "-", "Gaussian (β=1)"),
-        ("gaussian", 0.1): ("green", "--", "Gaussian (β=0.1)"),
-        ("powerspherical", 1.0): ("blue", "-", "PowerSpherical (β=1)"),
-        ("powerspherical", 0.1): ("blue", "--", "PowerSpherical (β=0.1)"),
-        ("clifford", 1.0): ("red", "-", "Clifford (β=1)"),
-        ("clifford", 0.1): ("red", "--", "Clifford (β=0.1)"),
-    }
-    
-    has_data = False
-    
-    for key, metrics in results.items():
-        if not metrics.get("latent_dims") or len(metrics["latent_dims"]) == 0:
-            continue
-            
-        if "unitary_metrics" not in metrics or not metrics["unitary_metrics"]:
-            continue
-            
-        has_data = True
-        color, style, label = styles.get(key, ("black", "-", str(key)))
-        
-        norm_devs = []
-        fft_uniforms = []
-        for i, ld in enumerate(metrics["latent_dims"]):
-            if i < len(metrics["unitary_metrics"]):
-                um = metrics["unitary_metrics"][i]
-                norm_devs.append(um.get("norm_deviation", 0))
-                fft_uniforms.append(um.get("fft_uniformity", 0))
-        
-        if norm_devs and fft_uniforms:
-            ax1.plot(metrics["latent_dims"][:len(norm_devs)], norm_devs, 
-                    color=color, linestyle=style, marker="o", label=label)
-            ax2.plot(metrics["latent_dims"][:len(fft_uniforms)], fft_uniforms, 
-                    color=color, linestyle=style, marker="o", label=label)
-    
-    if has_data:
-        ax1.set_xscale("log", base=2)
-        ax2.set_xscale("log", base=2)
-        
-        ax1.set_title("Vector Norm Deviation vs Latent Dim")
-        ax2.set_title("FFT Uniformity vs Latent Dim")
-        
-        ax1.set_xlabel("Latent Dimension")
-        ax2.set_xlabel("Latent Dimension")
-        
-        ax1.set_ylabel("Mean Deviation from Unit Norm")
-        ax2.set_ylabel("FFT Uniformity Error")
-        
-        ax1.grid(True, which="both", linestyle="--", alpha=0.5)
-        ax2.grid(True, which="both", linestyle="--", alpha=0.5)
-        
-        plt.legend(bbox_to_anchor=(1.05, 1), loc="upper left")
-        plt.tight_layout()
-    else:
-        for ax in (ax1, ax2):
-            ax.text(0.5, 0.5, "No unitary metrics data available yet", 
-                   horizontalalignment='center', verticalalignment='center')
-            ax.set_xticks([])
-            ax.set_yticks([])
-    
-    plt.savefig(save_path, dpi=300, bbox_inches="tight")
     plt.close()
 
 
@@ -595,8 +444,7 @@ def main():
                 "acc_mean": [], 
                 "acc_std": [], 
                 "f1_mean": [], 
-                "f1_std": [],
-                "unitary_metrics": []
+                "f1_std": []
             })
 
             m = train_one_experiment(
@@ -615,12 +463,10 @@ def main():
             results[key]["acc_std"].append(m["accuracy_std"])
             results[key]["f1_mean"].append(m["f1_mean"])
             results[key]["f1_std"].append(m["f1_std"])
-            results[key]["unitary_metrics"].append(m.get("unitary_metrics", {}))
 
             try:
                 compiled = compile_results(results)
                 plot_results(compiled, base_output / f"plot_{timestamp}_intermediate.png")
-                plot_unitary_metrics(compiled, base_output / f"unitary_metrics_{timestamp}_intermediate.png")
                 
                 with open(base_output / f"results_{timestamp}_intermediate.json", "w") as f:
                     serializable_results = {f"{k[0]}_{k[1]}": v for k, v in results.items()}
@@ -629,12 +475,9 @@ def main():
                 print(f"Warning: Intermediate saving/plotting failed")
     except KeyboardInterrupt:
         plot_results(compile_results(results), base_output / f"plot_{timestamp}.png")
-        plot_unitary_metrics(results, base_output / f"unitary_metrics_{timestamp}.png")
     
     # plot final results
-    # TODO: t-sne and pca
     plot_results(compile_results(results), base_output / f"plot_{timestamp}.png")
-    plot_unitary_metrics(results, base_output / f"unitary_metrics_{timestamp}.png")
 
 
 if __name__ == "__main__":

@@ -16,12 +16,12 @@ from vae_pws import ModelVAE, compute_loss
 H_DIM = 128
 Z_DIM = 10
 BATCH_SIZE = 128
-EPOCHS = 50
+EPOCHS = 100 
 KNN_EVAL_SAMPLES = [100, 600, 1000]
-N_RUNS = 3 
-Z_DIMS = [20, 40]
+N_RUNS = 20 
+Z_DIMS = [2, 5, 10, 20, 40]
 PATIENCE = 50  # paper mentions lookahead of 50 epochs
-DELTA = 1e-3
+DELTA = 1e-2
 # device configuration
 device = torch.device(
     "cuda"
@@ -35,9 +35,7 @@ print(f"Using device: {device}")
 transform = transforms.Compose(
     [
         transforms.ToTensor(),
-        transforms.Lambda(
-            lambda x: (x > torch.rand_like(x)).float()
-        ),  # dynamic binarization
+#         transforms.Lambda(lambda x: (x > torch.rand_like(x)).float(),  # dynamic binarization
     ]
 )
 dataset = datasets.MNIST("../datasets", train=True, download=True, transform=transform)
@@ -241,12 +239,3 @@ df = df.reindex(
 print(df.to_string())
 # save as csv
 df.to_csv("pws_vae_results.csv")
-
-
-def highlight_best(s):
-    is_best = s == s.max()
-    return ["font-weight: bold" if v else "" for v in is_best]
-
-
-styled_df = df.style.apply(highlight_best, axis=1)
-print(styled_df.to_string())

@@ -16,12 +16,12 @@ from vae_vmf import ModelVAE, compute_loss
 H_DIM = 128
 Z_DIM = 10
 BATCH_SIZE = 128
-EPOCHS = 50
+EPOCHS = 100 
 KNN_EVAL_SAMPLES = [100, 600, 1000]
-N_RUNS = 5 
-Z_DIMS = [20, 40]
+N_RUNS = 20 
+Z_DIMS = [5, 10, 20, 40]
 PATIENCE = 50  # paper mentions lookahad of 50 epochs
-DELTA = 5e-4
+DELTA = 1e-3 # TO-DO: find a value that allows for convergence at d=40 for the vMF VAE (mlp)
 # device configuration
 device = torch.device(
     "cuda"
@@ -34,7 +34,7 @@ transform = transforms.Compose(
     [
         transforms.ToTensor(),
         transforms.Lambda(
-            lambda x: (x > torch.rand_like(x)).float()
+            # lambda x: (x > torch.rand_like(x)).float()
         ),  # dynamic binarization
     ]
 )
@@ -184,7 +184,7 @@ def run_experiment(
             device
         )
 
-        optimizer = Adam(model.parameters(), lr=1e-3)
+        optimizer = Adam(model.parameters(), lr=1e-3) # TODO: also modify for d=40 
         run_results = train_and_evaluate(
             model, train_loader, val_loader, test_loader, optimizer, device
         )
@@ -248,12 +248,3 @@ df = df.reindex(
 print(df.to_string())
 # save as csv
 df.to_csv("vmf_vae_results.csv")
-
-
-def highlight_best(s):
-    is_best = s == s.max()
-    return ["font-weight: bold" if v else "" for v in is_best]
-
-
-styled_df = df.style.apply(highlight_best, axis=1)
-print(styled_df.to_string())

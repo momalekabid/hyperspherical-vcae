@@ -19,12 +19,12 @@ from clifford import ModelVAE, compute_loss
 H_DIM = 128
 Z_DIM = 10
 BATCH_SIZE = 64
-EPOCHS = 50 
+EPOCHS = 100 
 KNN_EVAL_SAMPLES = [100, 600, 1000]
-N_RUNS = 3 
-Z_DIMS = [20, 40]
+N_RUNS = 20 
+Z_DIMS = [2, 5, 10, 20, 40]
 PATIENCE = 50
-DELTA = 1e-3
+DELTA = 1e-2
 
 
 # ----------------------------------------------------------------------
@@ -37,11 +37,10 @@ device = torch.device(
     else "cpu"
 )
 
-# Define dataset and loaders
 transform = transforms.Compose(
     [
         transforms.ToTensor(),
-        transforms.Lambda(lambda x: (x > torch.rand_like(x)).float()),  # dynamic binarization
+        # transforms.Lambda(lambda x: (x > torch.rand_like(x)).float()),  # dynamic binarization
     ]
 )
 
@@ -95,41 +94,6 @@ def perform_knn_evaluation(model, train_loader, test_loader, device):
         results[n_samples] = accuracy
 
     return results
-
-
-def visualize_reconstructions(
-    model, test_loader, save_path="./visualizations", z_dim=None, num_examples=10
-):
-    model.eval()
-
-    os.makedirs(save_path, exist_ok=True)
-    dim_suffix = f"_zdim{z_dim}" if z_dim is not None else ""
-    data, _ = next(iter(test_loader))
-    data = data[:num_examples].to(device)
-
-    with torch.no_grad():
-        (_, _), (_, _), _, x_recon = model(data)
-        x_recon = x_recon.view(-1, 28, 28).cpu()
-        data = data.view(-1, 28, 28).cpu()
-
-    fig, axes = plt.subplots(2, num_examples, figsize=(2 * num_examples, 4))
-
-    for i in range(num_examples):
-        axes[0, i].imshow(data[i], cmap="gray")
-        axes[0, i].axis("off")
-        if i == 0:
-            axes[0, i].set_title("Original")
-
-    for i in range(num_examples):
-        axes[1, i].imshow(x_recon[i], cmap="gray")
-        axes[1, i].axis("off")
-        if i == 0:
-            axes[1, i].set_title("Reconstructed")
-
-    plt.suptitle(f"Original vs Reconstructed Images (z_dim={z_dim})")
-    plt.tight_layout()
-    plt.savefig(f"{save_path}/reconstructions{dim_suffix}.png")
-    plt.close()
 
 
 def train_and_evaluate(
@@ -188,8 +152,6 @@ def train_and_evaluate(
             print(f"Early stopping at epoch {epoch}")
             break
 
-    # visualize_latent_space(model, test_loader, z_dim=z_dim)
-    visualize_reconstructions(model, test_loader, z_dim=z_dim)
     return perform_knn_evaluation(model, train_loader, test_loader, device)
 
 
