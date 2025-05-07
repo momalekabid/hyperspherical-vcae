@@ -15,11 +15,11 @@ from vae_vmf import ModelVAE, compute_loss
 # constants
 H_DIM = 128
 Z_DIM = 10
-BATCH_SIZE = 128
-EPOCHS = 100 
+BATCH_SIZE = 64 
+EPOCHS = 200 
 KNN_EVAL_SAMPLES = [100, 600, 1000]
-N_RUNS = 20 
-Z_DIMS = [5, 10, 20, 40]
+N_RUNS = 3 
+Z_DIMS = [40]
 PATIENCE = 50  # paper mentions lookahad of 50 epochs
 DELTA = 1e-3 # TO-DO: find a value that allows for convergence at d=40 for the vMF VAE (mlp)
 # device configuration
@@ -33,9 +33,7 @@ print(f"Using device: {device}")
 transform = transforms.Compose(
     [
         transforms.ToTensor(),
-        # transforms.Lambda(
-            # lambda x: (x > torch.rand_like(x)).float()
-        # ),  # dynamic binarization
+        transforms.Lambda(lambda x: (x > torch.rand_like(x)).float()),  # dynamic binarization
     ]
 )
 dataset = datasets.MNIST("../datasets", train=True, download=True, transform=transform)

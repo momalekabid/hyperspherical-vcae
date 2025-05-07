@@ -253,7 +253,23 @@ def train_one_experiment(
     # persist metrics
     with open(metrics_file, "w") as f:
         json.dump(knn_metrics, f, indent=4)
+    def plot_confusion_matrix(cm: np.ndarray, save_path: Path):
+        """Simple heat-map confusion matrix."""
+        fig, ax = plt.subplots(figsize=(6, 5))
+        im = ax.imshow(cm, interpolation="nearest", cmap="Blues")
+        plt.colorbar(im, ax=ax)
+        ax.set_xlabel("Predicted")
+        ax.set_ylabel("True")
+        ax.set_title("Confusion Matrix")
 
+        # annotate
+        for i in range(cm.shape[0]):
+            for j in range(cm.shape[1]):
+                ax.text(j, i, int(cm[i, j]), ha="center", va="center", color="black", fontsize=7)
+
+        plt.tight_layout()
+        plt.savefig(save_path, dpi=300)
+        plt.close()
     # save confusion matrix plot
     plot_confusion_matrix(
         np.array(knn_metrics["confusion_matrix"]),
